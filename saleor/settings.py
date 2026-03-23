@@ -34,6 +34,7 @@ from .core.db.patch import patch_db
 from .core.languages import LANGUAGES as CORE_LANGUAGES
 from .core.rlimit import validate_and_set_rlimit
 from .core.schedules import (
+    initiated_async_webhooks_schedule,
     initiated_checkout_automatic_completion_schedule,
     initiated_checkout_search_update_schedule,
     initiated_gift_card_search_update_schedule,
@@ -755,6 +756,10 @@ CELERY_BEAT_SCHEDULE = {
         # readiness for automatic completion.
         "task": "saleor.checkout.tasks.trigger_automatic_checkout_completion_task",
         "schedule": initiated_checkout_automatic_completion_schedule,
+    },
+    "async-webhooks": {
+        "task": "saleor.webhook.transport.asynchronous.transport.trigger_send_webhooks_async_for_apps",
+        "schedule": initiated_async_webhooks_schedule,
     },
 }
 
