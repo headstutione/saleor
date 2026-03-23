@@ -113,9 +113,7 @@ def test_send_webhooks_async_for_app_no_payload(
     deliveries = EventDelivery.objects.all()
     assert len(deliveries) == 1
     assert deliveries[0].status == EventDeliveryStatus.PENDING
-    assert EventDeliveryAttempt.objects.filter(
-        status=EventDeliveryStatus.FAILED
-    ).exists()
+    assert not EventDeliveryAttempt.objects.exists()
 
 
 @patch(

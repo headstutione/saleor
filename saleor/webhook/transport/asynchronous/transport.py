@@ -872,7 +872,15 @@ def process_async_webhooks_for_app(
 
         try:
             if not delivery.payload:
-                raise ValueError(f"Event delivery id: {delivery_id} has no payload.")
+                task_logger.warning(
+                    "[Webhook ID:%r] Event delivery id: %r has no payload.",
+                    webhook.id,
+                    delivery.id,
+                )
+                # Stop processing deliveries if payload is missing
+                # Wait for the next task execution to check if the payload will be available
+                break
+
             data = delivery.payload.get_payload()
             # Convert payload to bytes if it's not already.
             data = data if isinstance(data, bytes) else data.encode("utf-8")
