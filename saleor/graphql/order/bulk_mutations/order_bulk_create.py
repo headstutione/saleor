@@ -282,6 +282,8 @@ class OrderAmounts:
     total_net: Decimal
     subtotal_net: Decimal
     subtotal_gross: Decimal
+    undiscounted_subtotal_net: Decimal
+    undiscounted_subtotal_gross: Decimal
     undiscounted_total_gross: Decimal
     undiscounted_total_net: Decimal
     shipping_tax_rate: Decimal
@@ -1390,6 +1392,8 @@ class OrderBulkCreate(BaseMutation, I18nMixin):
             total_net=order_subtotal_net_amount + shipping_price_net_amount,
             subtotal_net=order_subtotal_net_amount,
             subtotal_gross=order_subtotal_gross_amount,
+            undiscounted_subtotal_net=order_undiscounted_subtotal_net_amount,
+            undiscounted_subtotal_gross=order_undiscounted_subtotal_gross_amount,
             undiscounted_total_gross=order_undiscounted_subtotal_gross_amount
             + shipping_price_gross_amount,
             undiscounted_total_net=order_undiscounted_subtotal_net_amount
@@ -2182,6 +2186,12 @@ class OrderBulkCreate(BaseMutation, I18nMixin):
         )
         order_data.order.subtotal_net_amount = order_amounts.subtotal_net
         order_data.order.subtotal_gross_amount = order_amounts.subtotal_gross
+        order_data.order.undiscounted_subtotal_net_amount = (
+            order_amounts.undiscounted_subtotal_net
+        )
+        order_data.order.undiscounted_subtotal_gross_amount = (
+            order_amounts.undiscounted_subtotal_gross
+        )
 
         order_data.order.customer_note = order_input.get("customer_note") or ""
         order_data.order.redirect_url = order_input.get("redirect_url")

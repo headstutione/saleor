@@ -80,6 +80,7 @@ from ..core.descriptions import (
     ADDED_IN_320,
     ADDED_IN_321,
     ADDED_IN_322,
+    ADDED_IN_323,
     DEPRECATED_IN_3X_INPUT,
     PREVIEW_FEATURE,
 )
@@ -1616,6 +1617,14 @@ class Order(SyncWebhookControlContextModelObjectType[ModelObjectType[models.Orde
     undiscounted_total = graphene.Field(
         TaxedMoney, description="Undiscounted total amount of the order.", required=True
     )
+    undiscounted_subtotal = graphene.Field(
+        TaxedMoney,
+        description=(
+            "Sum of each order line's undiscounted total price, excluding shipping."
+            + ADDED_IN_323
+        ),
+        required=True,
+    )
     shipping_method = graphene.Field(
         ShippingMethod,
         description="Shipping method for this order.",
@@ -2212,6 +2221,26 @@ class Order(SyncWebhookControlContextModelObjectType[ModelObjectType[models.Orde
             OrderPriceCalculationByOrderIdAndWebhookSyncLoader(info.context)
             .load((order.id, root.allow_sync_webhooks))
             .then(_get_undiscounted_total)
+        )
+
+    @staticmethod
+    @traced_resolver
+    @prevent_sync_event_circular_query
+    def resolve_undiscounted_subtotal(
+        root: SyncWebhookControlContext[models.Order], info
+    ):
+        order = root.node
+
+        def _get_undiscounted_subtotal(data):
+            refreshed_order, _lines = data
+            return quantize_price(
+                refreshed_order.undiscounted_subtotal, refreshed_order.currency
+            )
+
+        return (
+            OrderPriceCalculationByOrderIdAndWebhookSyncLoader(info.context)
+            .load((order.id, root.allow_sync_webhooks))
+            .then(_get_undiscounted_subtotal)
         )
 
     @staticmethod

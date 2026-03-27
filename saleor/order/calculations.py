@@ -142,6 +142,8 @@ def process_order_prices(
                         update_fields=[
                             "subtotal_net_amount",
                             "subtotal_gross_amount",
+                            "undiscounted_subtotal_net_amount",
+                            "undiscounted_subtotal_gross_amount",
                             "total_net_amount",
                             "total_gross_amount",
                             "undiscounted_total_net_amount",
@@ -524,6 +526,7 @@ def _recalculate_with_plugins(
         pass
 
     undiscounted_shipping_price = order.undiscounted_base_shipping_price
+    order.undiscounted_subtotal = quantize_price(undiscounted_subtotal, order.currency)
     order.undiscounted_total = undiscounted_subtotal + TaxedMoney(
         net=undiscounted_shipping_price, gross=undiscounted_shipping_price
     )
@@ -608,6 +611,7 @@ def _apply_tax_data(
         undiscounted_subtotal += order_line.undiscounted_total_price
 
     order.subtotal = subtotal
+    order.undiscounted_subtotal = quantize_price(undiscounted_subtotal, currency)
     order.total = shipping_price + subtotal
     order.undiscounted_total = undiscounted_shipping_price + undiscounted_subtotal
 
@@ -624,6 +628,9 @@ def _remove_tax_gross(order, lines):
     order.total_gross_amount = order.total_net_amount
     order.undiscounted_total_gross_amount = order.undiscounted_total_net_amount
     order.subtotal_gross_amount = order.subtotal_net_amount
+    order.undiscounted_subtotal_gross_amount = (
+        order.undiscounted_subtotal_net_amount
+    )
     order.shipping_price_gross_amount = order.shipping_price_net_amount
     order.shipping_tax_rate = Decimal("0.00")
 
@@ -644,6 +651,9 @@ def _remove_tax_net(order, lines):
     order.total_net_amount = order.total_gross_amount
     order.undiscounted_total_net_amount = order.undiscounted_total_gross_amount
     order.subtotal_net_amount = order.subtotal_gross_amount
+    order.undiscounted_subtotal_net_amount = (
+        order.undiscounted_subtotal_gross_amount
+    )
     order.shipping_price_net_amount = order.shipping_price_gross_amount
     order.shipping_tax_rate = Decimal("0.00")
 

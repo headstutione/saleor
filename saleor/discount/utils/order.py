@@ -15,6 +15,7 @@ from ...core.taxes import zero_money
 from ...order.base_calculations import base_order_subtotal
 from ...order.lock_objects import order_qs_select_for_update
 from ...order.models import Order, OrderLine
+from ...payment.model_helpers import get_undiscounted_subtotal
 from .. import DiscountType
 from ..interface import VariantPromotionRuleInfo
 from ..models import DiscountValueType, OrderLineDiscount
@@ -226,6 +227,9 @@ def _set_order_base_prices(order: Order, lines_info: list["EditableOrderLineInfo
     subtotal = base_order_subtotal(order, lines)
     shipping_price = order.undiscounted_base_shipping_price
     total = subtotal + shipping_price
+    undiscounted_subtotal = quantize_price(
+        get_undiscounted_subtotal(lines, order.currency), order.currency
+    )
 
     update_fields = []
     if order.subtotal != TaxedMoney(net=subtotal, gross=subtotal):
@@ -234,6 +238,11 @@ def _set_order_base_prices(order: Order, lines_info: list["EditableOrderLineInfo
     if order.total != TaxedMoney(net=total, gross=total):
         order.total = TaxedMoney(net=total, gross=total)
         update_fields.extend(["total_net_amount", "total_gross_amount"])
+    if order.undiscounted_subtotal != undiscounted_subtotal:
+        order.undiscounted_subtotal = undiscounted_subtotal
+        update_fields.extend(
+            ["undiscounted_subtotal_net_amount", "undiscounted_subtotal_gross_amount"]
+        )
 
     if update_fields:
         with allow_writer():

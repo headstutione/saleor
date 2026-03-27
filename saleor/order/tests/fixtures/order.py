@@ -19,7 +19,7 @@ from ....discount.utils.voucher import (
     get_products_voucher_discount,
     validate_voucher_in_order,
 )
-from ....payment.model_helpers import get_subtotal
+from ....payment.model_helpers import get_subtotal, get_undiscounted_subtotal
 from ....plugins.manager import get_plugins_manager
 from ....product.models import (
     Product,
@@ -59,6 +59,9 @@ def recalculate_order(order):
 
     order.total = total
     order.subtotal = get_subtotal(order.lines.all(), order.currency)
+    order.undiscounted_subtotal = get_undiscounted_subtotal(
+        order.lines.all(), order.currency
+    )
     order.undiscounted_total = undiscounted_total
 
     if discount:

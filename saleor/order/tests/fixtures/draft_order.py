@@ -258,6 +258,9 @@ def draft_order_and_promotions(
     # reset prices
     order.total = TaxedMoney(net=zero_money(currency), gross=zero_money(currency))
     order.subtotal = TaxedMoney(net=zero_money(currency), gross=zero_money(currency))
+    order.undiscounted_subtotal = TaxedMoney(
+        net=zero_money(currency), gross=zero_money(currency)
+    )
     order.undiscounted_total = TaxedMoney(
         net=zero_money(currency), gross=zero_money(currency)
     )

@@ -324,6 +324,10 @@ def assign_order_prices(
     order.subtotal_net_amount = subtotal.amount
     order.subtotal_gross_amount = subtotal.amount
 
+    undiscounted_subtotal_money = undiscounted_order_subtotal(order, lines)
+    order.undiscounted_subtotal_net_amount = undiscounted_subtotal_money.amount
+    order.undiscounted_subtotal_gross_amount = undiscounted_subtotal_money.amount
+
     undiscounted_total = undiscounted_order_total(
         order, lines, database_connection_name=database_connection_name
     )

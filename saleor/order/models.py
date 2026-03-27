@@ -342,6 +342,20 @@ class Order(ModelWithMetadata, ModelWithExternalReference):
         net_amount_field="subtotal_net_amount",
         gross_amount_field="subtotal_gross_amount",
     )
+    undiscounted_subtotal_net_amount = models.DecimalField(
+        max_digits=settings.DEFAULT_MAX_DIGITS,
+        decimal_places=settings.DEFAULT_DECIMAL_PLACES,
+        default=Decimal("0.0"),
+    )
+    undiscounted_subtotal_gross_amount = models.DecimalField(
+        max_digits=settings.DEFAULT_MAX_DIGITS,
+        decimal_places=settings.DEFAULT_DECIMAL_PLACES,
+        default=Decimal("0.0"),
+    )
+    undiscounted_subtotal = TaxedMoneyField(
+        net_amount_field="undiscounted_subtotal_net_amount",
+        gross_amount_field="undiscounted_subtotal_gross_amount",
+    )
 
     voucher = models.ForeignKey(
         Voucher, blank=True, null=True, related_name="+", on_delete=models.SET_NULL

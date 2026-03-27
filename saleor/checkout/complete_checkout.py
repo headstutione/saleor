@@ -52,7 +52,7 @@ from ..order.utils import (
     update_order_display_gross_prices,
 )
 from ..payment import PaymentError, TransactionKind, gateway
-from ..payment.model_helpers import get_subtotal
+from ..payment.model_helpers import get_subtotal, get_undiscounted_subtotal
 from ..payment.models import Payment, Transaction
 from ..payment.utils import fetch_customer_id, store_customer_id
 from ..product.models import ProductTranslation, ProductVariantTranslation
@@ -723,6 +723,10 @@ def _prepare_order_data(
         [order_line_info.line for order_line_info in order_data["lines"]],
         taxed_total.currency,
     )
+    undiscounted_subtotal = get_undiscounted_subtotal(
+        [order_line_info.line for order_line_info in order_data["lines"]],
+        taxed_total.currency,
+    )
 
     order_data.update(
         {
@@ -730,6 +734,7 @@ def _prepare_order_data(
             "tracking_client_id": checkout.tracking_code or "",
             "total": taxed_total,
             "subtotal": subtotal,
+            "undiscounted_subtotal": undiscounted_subtotal,
             "undiscounted_total": undiscounted_total,
             "shipping_tax_rate": shipping_tax_rate,
             "tax_error": checkout.tax_error,
@@ -1488,14 +1493,13 @@ def _create_order_from_checkout(
     )
 
     # update undiscounted order total
-    undiscounted_total = (
-        sum(
-            [line_info.line.undiscounted_total_price for line_info in order_lines_info],
-            start=zero_taxed_money(taxed_total.currency),
-        )
-        + undiscounted_base_shipping_price
+    undiscounted_lines_total = sum(
+        [line_info.line.undiscounted_total_price for line_info in order_lines_info],
+        start=zero_taxed_money(taxed_total.currency),
     )
+    undiscounted_total = undiscounted_lines_total + undiscounted_base_shipping_price
     order.undiscounted_total = undiscounted_total
+    order.undiscounted_subtotal = undiscounted_lines_total
     currency = checkout_info.checkout.currency
     subtotal_list = [line.line.total_price for line in order_lines_info]
     order.subtotal = sum(subtotal_list, zero_taxed_money(currency))
@@ -1503,6 +1507,8 @@ def _create_order_from_checkout(
         update_fields=[
             "undiscounted_total_net_amount",
             "undiscounted_total_gross_amount",
+            "undiscounted_subtotal_net_amount",
+            "undiscounted_subtotal_gross_amount",
             "subtotal_net_amount",
             "subtotal_gross_amount",
         ]

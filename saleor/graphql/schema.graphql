@@ -11851,6 +11851,13 @@ type Order implements Node & ObjectWithMetadata @doc(category: "Orders") {
   """Undiscounted total amount of the order."""
   undiscountedTotal: TaxedMoney!
 
+  """
+  Sum of each order line's undiscounted total price, excluding shipping.
+
+  Added in Saleor 3.23.
+  """
+  undiscountedSubtotal: TaxedMoney!
+
   """Shipping method for this order."""
   shippingMethod: ShippingMethod @deprecated(reason: "Use `deliveryMethod` instead.")
 

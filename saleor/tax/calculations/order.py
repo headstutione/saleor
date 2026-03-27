@@ -87,6 +87,7 @@ def _set_order_totals(
         order.total = quantize_price(default_value, currency)
         order.undiscounted_total = quantize_price(default_value, currency)
         order.subtotal = quantize_price(default_value, currency)
+        order.undiscounted_subtotal = quantize_price(default_value, currency)
         return
 
     subtotal = zero_taxed_money(currency)
@@ -106,6 +107,7 @@ def _set_order_totals(
     order.total = quantize_price(subtotal + order.shipping_price, currency)
     order.undiscounted_total = quantize_price(undiscounted_total, currency)
     order.subtotal = quantize_price(subtotal, currency)
+    order.undiscounted_subtotal = quantize_price(undiscounted_subtotal, currency)
 
 
 def _calculate_order_shipping(
