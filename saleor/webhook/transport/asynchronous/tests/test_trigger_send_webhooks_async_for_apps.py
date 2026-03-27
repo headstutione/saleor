@@ -50,7 +50,24 @@ def test_trigger_send_webhooks_async_for_apps_skips_non_pending(
     # given
     event_delivery.status = EventDeliveryStatus.FAILED
     event_delivery.save()
-    assert not EventDelivery.objects.filter(status=EventDeliveryStatus.PENDING).exists()
+
+    # when
+    trigger_send_webhooks_async_for_apps()
+
+    # then
+    mock_apply_async.assert_not_called()
+
+
+@patch(
+    "saleor.webhook.transport.asynchronous.transport.send_webhooks_async_for_app.apply_async"
+)
+def test_trigger_send_webhooks_async_for_apps_skips_deliveries_without_payload(
+    mock_apply_async,
+    event_delivery,
+):
+    # given
+    event_delivery.payload = None
+    event_delivery.save()
 
     # when
     trigger_send_webhooks_async_for_apps()
