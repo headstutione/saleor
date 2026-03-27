@@ -30,6 +30,12 @@ class Command(BaseCommand):
             dest="quiet",
             help="Hide auth token output after installation",
         )
+        parser.add_argument(
+            "--additional-data",
+            nargs="*",
+            default=[],
+            help="Arbitrary key-value pairs in the format key=value to be sent to app registration endpoint",
+        )
 
     def validate_manifest_url(self, manifest_url: str):
         url_validator = AppURLValidator()
@@ -40,6 +46,20 @@ class Command(BaseCommand):
                 f"Incorrect format of manifest-url: {manifest_url}"
             ) from e
 
+    def clean_additional_data(self, key_value_pairs):
+        additional_data = {}
+
+        for pair in key_value_pairs:
+            if "=" not in pair:
+                raise CommandError(
+                    f'Invalid argument format: "{pair}". Expected format is key=value.'
+                )
+
+            key, value = pair.split("=", 1)
+            additional_data[key] = value
+
+        return additional_data
+
     def handle(self, *args: Any, **options: Any) -> str | None:
         activate = options["activate"]
         quiet = options["quiet"]
@@ -48,6 +68,7 @@ class Command(BaseCommand):
         self.validate_manifest_url(manifest_url)
         manifest_data = fetch_manifest(manifest_url)
         permissions = clean_permissions(manifest_data.get("permissions", []))
+        additional_data = self.clean_additional_data(options["additional_data"])
 
         if quiet and (
             app := App.objects.not_removed()
@@ -66,7 +87,11 @@ class Command(BaseCommand):
             app_job.permissions.set(permissions)
 
         try:
-            app, token = install_app(app_job, activate)
+            app, token = install_app(
+                app_installation=app_job,
+                activate=activate,
+                additional_data=additional_data,
+            )
             app.is_installed = True
             app.save(update_fields=["is_installed"])
             app_job.delete()

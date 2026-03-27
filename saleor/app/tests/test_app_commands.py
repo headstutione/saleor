@@ -270,3 +270,50 @@ def test_creates_app_with_identifier():
     assert len(tokens) == 1
     assert app.uuid is not None
     assert app.identifier == "test.test"
+
+
+@pytest.mark.parametrize(
+    ("additional_data_args", "expected_additional_data"),
+    [
+        ([], {}),
+        (
+            ["key1=value1", "key2=value2"],
+            {"key1": "value1", "key2": "value2"},
+        ),
+    ],
+)
+def test_install_app_additional_data_handling(
+    additional_data_args, expected_additional_data
+):
+    # given
+    manifest_url = "http://otherapp:3000/manifest"
+    manifest_data = {
+        "id": "app.test.example",
+        "name": "Test App",
+        "version": "1.0.0",
+        "permissions": [],
+    }
+    mock_app = Mock(spec=App)
+    mock_token = "test-token"
+
+    with patch(
+        "saleor.app.management.commands.install_app.fetch_manifest",
+        return_value=manifest_data,
+    ), patch(
+        "saleor.app.management.commands.install_app.install_app",
+        return_value=(mock_app, mock_token),
+    ) as mocked_install_app:
+        # when
+        call_command(
+            "install_app",
+            manifest_url,
+            additional_data=additional_data_args,
+            activate=True,
+        )
+
+    # then
+    mocked_install_app.assert_called_once_with(
+        app_installation=ANY,
+        activate=True,
+        additional_data=expected_additional_data,
+    )

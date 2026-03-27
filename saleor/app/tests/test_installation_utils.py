@@ -23,9 +23,47 @@ from ..installation_utils import (
     fetch_brand_data_task,
     fetch_icon_image,
     install_app,
+    send_app_token,
     validate_app_install_response,
 )
 from ..models import App
+
+
+def test_send_app_token_with_additional_data(monkeypatch):
+    # given
+    target_url = "http://otherapp:3000/register"
+    token = "test-token"
+    additional_data = {"key1": "value1", "key2": "value2"}
+
+    mock_request = Mock(return_value=Mock(status_code=200))
+    monkeypatch.setattr(HTTPSession, "request", mock_request)
+
+    # when
+    send_app_token(target_url=target_url, token=token, additional_data=additional_data)
+
+    # then
+    _, call_kwargs = mock_request.call_args
+    request_body = call_kwargs["json"]
+    assert request_body["auth_token"] == token
+    assert request_body["additional_data"] == additional_data
+
+
+def test_send_app_token_without_additional_data(monkeypatch):
+    # given
+    target_url = "http://otherapp:3000/register"
+    token = "test-token"
+
+    mock_request = Mock(return_value=Mock(status_code=200))
+    monkeypatch.setattr(HTTPSession, "request", mock_request)
+
+    # when
+    send_app_token(target_url=target_url, token=token)
+
+    # then
+    _, call_kwargs = mock_request.call_args
+    request_body = call_kwargs["json"]
+    assert request_body["auth_token"] == token
+    assert "additional_data" not in request_body
 
 
 def test_validate_app_install_response():

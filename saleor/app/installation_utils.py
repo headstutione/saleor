@@ -53,7 +53,11 @@ def validate_app_install_response(response: Response):
         ) from e
 
 
-def send_app_token(target_url: str, token: str):
+def send_app_token(
+    target_url: str,
+    token: str,
+    additional_data: dict | None = None,
+):
     domain = get_domain()
     headers = {
         "Content-Type": "application/json",
@@ -63,7 +67,10 @@ def send_app_token(target_url: str, token: str):
         AppHeaders.API_URL: build_absolute_uri(reverse("api"), domain),
         AppHeaders.SCHEMA_VERSION: schema_version,
     }
-    json_data = {"auth_token": token}
+    json_data: dict[str, str | dict] = {"auth_token": token}
+    if additional_data:
+        json_data["additional_data"] = additional_data
+
     response = HTTPClient.send_request(
         "POST",
         target_url,
@@ -213,7 +220,9 @@ def fetch_manifest(manifest_url: str, timeout=settings.COMMON_REQUESTS_TIMEOUT):
 
 
 def install_app(
-    app_installation: AppInstallation, activate: bool = False
+    app_installation: AppInstallation,
+    activate: bool = False,
+    additional_data: dict | None = None,
 ) -> tuple[App, AppToken | None]:
     manifest_data = fetch_manifest(app_installation.manifest_url)
     assigned_permissions = app_installation.permissions.all()
@@ -303,7 +312,11 @@ def install_app(
         _, token = app.tokens.create(name="Default token")  # type: ignore[call-arg] # calling create on a related manager # noqa: E501
 
         try:
-            send_app_token(target_url=tokent_target_url, token=token)
+            send_app_token(
+                target_url=tokent_target_url,
+                token=token,
+                additional_data=additional_data,
+            )
         except requests.RequestException as e:
             fetch_brand_data_async(manifest_data, app_installation=app_installation)
             app.delete()
