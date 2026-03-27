@@ -10,6 +10,7 @@ from django.utils import timezone
 from .....account.models import Address
 from .....core import JobStatus
 from .....core.prices import quantize_price
+from .....payment.model_helpers import get_undiscounted_subtotal
 from .....discount.models import OrderDiscount
 from .....discount.utils.manual_discount import DiscountValueType
 from .....invoice.models import Invoice
@@ -755,6 +756,10 @@ def test_order_bulk_create(
     )
     assert db_order.subtotal_gross_amount == expected_order_subtotal_gross
     assert db_order.subtotal_net_amount == expected_order_subtotal_net
+    assert db_order.undiscounted_subtotal == quantize_price(
+        get_undiscounted_subtotal(db_order.lines.all(), db_order.currency),
+        db_order.currency,
+    )
     assert db_order.total_gross_amount == expected_order_total_gross
     assert db_order.total_net_amount == expected_order_total_net
     assert db_order.undiscounted_total_gross_amount == expected_order_total_gross

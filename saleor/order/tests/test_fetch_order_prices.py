@@ -129,6 +129,14 @@ def test_fetch_order_prices_catalogue_discount_flat_rates(
     assert order.total_gross_amount == order.total_net_amount * tax_rate
     assert order.subtotal_net_amount == order.total_net_amount - shipping_net_price
     assert order.subtotal_gross_amount == order.subtotal_net_amount * tax_rate
+    assert order.undiscounted_subtotal_net_amount == (
+        line_1.undiscounted_total_price_net_amount
+        + line_2.undiscounted_total_price_net_amount
+    )
+    assert order.undiscounted_subtotal_gross_amount == (
+        line_1.undiscounted_total_price_gross_amount
+        + line_2.undiscounted_total_price_gross_amount
+    )
 
 
 @pytest.mark.parametrize("create_new_discounts", [True, False])
