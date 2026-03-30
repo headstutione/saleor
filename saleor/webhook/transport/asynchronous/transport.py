@@ -48,11 +48,10 @@ from ..utils import (
     clear_successful_deliveries,
     clear_successful_delivery,
     create_attempt,
-    create_attempts_for_deliveries,
     delivery_update,
-    get_deliveries_for_app,
     get_delivery_for_webhook,
     get_multiple_deliveries_for_webhooks,
+    get_pending_deliveries_for_app,
     get_sqs_message_group_id,
     handle_webhook_retry,
     is_delivery_still_pending,
@@ -855,26 +854,23 @@ def process_async_webhooks_for_app(
     task_id: str, app_id: int, telemetry_context: TelemetryTaskContext
 ):
     domain = get_domain()
-    deliveries = get_deliveries_for_app(app_id, WEBHOOK_ASYNC_BATCH_SIZE)
+    deliveries = get_pending_deliveries_for_app(app_id, WEBHOOK_ASYNC_BATCH_SIZE)
 
     if not deliveries:
         logger.info("No pending deliveries found for App ID: %s", app_id)
         return
 
-    attempts_for_deliveries = create_attempts_for_deliveries(deliveries, task_id)
     failed_deliveries_attempts = []
     successful_deliveries = []
 
-    for delivery_id, delivery_with_count in deliveries.items():
-        delivery = delivery_with_count.delivery
-        attempt_count = delivery_with_count.count
-        attempt = attempts_for_deliveries[delivery_id]
+    for delivery in deliveries:
+        attempt = create_attempt(delivery, task_id, with_save=False)
 
         webhook = delivery.webhook
 
         try:
             if not delivery.payload:
-                if is_delivery_still_pending(delivery_id):
+                if is_delivery_still_pending(delivery.id):
                     task_logger.info(
                         "[Webhook ID:%r] Event delivery id: %r has no payload.",
                         webhook.id,
@@ -894,7 +890,7 @@ def process_async_webhooks_for_app(
             # Count payload size in bytes.
             payload_size = len(data)
 
-            if attempt_count == 0:
+            if delivery.attempts_count == 0:
                 record_first_delivery_attempt_delay(
                     delivery.created_at, delivery.event_type, webhook.app
                 )
@@ -923,9 +919,7 @@ def process_async_webhooks_for_app(
             )
             if response.status == EventDeliveryStatus.FAILED:
                 attempt_update(attempt, response, with_save=True)
-                failed_deliveries_attempts.append(
-                    (delivery, attempt, attempt_count, response)
-                )
+                failed_deliveries_attempts.append((delivery, attempt, response))
                 # if encounter failure stop processing further deliveries
                 # in case app is not responding
                 break
@@ -945,9 +939,7 @@ def process_async_webhooks_for_app(
                 content=str(e), status=EventDeliveryStatus.FAILED
             )
             attempt_update(attempt, response, with_save=True)
-            failed_deliveries_attempts.append(
-                (delivery, attempt, attempt_count, response)
-            )
+            failed_deliveries_attempts.append((delivery, attempt, response))
 
         observability.report_event_delivery_attempt(attempt)
         successful_deliveries.append(delivery)

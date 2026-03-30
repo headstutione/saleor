@@ -2,12 +2,12 @@ import datetime
 import hashlib
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from time import time
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from urllib.parse import unquote, urlparse, urlunparse
 from uuid import UUID
 
@@ -54,10 +54,10 @@ class WebhookSchemes(str, Enum):
     GOOGLE_CLOUD_PUBSUB = "gcpubsub"
 
 
-@dataclass
-class EventDeliveryWithAttemptCount:
-    delivery: "EventDelivery"
-    count: int
+if TYPE_CHECKING:
+
+    class EventDeliveryWithAttemptCount(EventDelivery):
+        attempts_count: int
 
 
 @dataclass
@@ -407,10 +407,8 @@ def get_delivery_for_webhook(
     return delivery, not_found
 
 
-def get_deliveries_for_app(
-    app_id, batch_size
-) -> dict[int, "EventDeliveryWithAttemptCount"]:
-    deliveries = (
+def get_pending_deliveries_for_app(app_id, batch_size):
+    return (
         EventDelivery.objects.select_related("payload", "webhook__app")
         .filter(webhook__app_id=app_id, status=EventDeliveryStatus.PENDING)
         .order_by("created_at")
@@ -418,14 +416,6 @@ def get_deliveries_for_app(
             attempts_count=Count("attempts", distinct=True),
         )[:batch_size]
     )
-
-    return {
-        delivery.pk: EventDeliveryWithAttemptCount(
-            delivery=delivery,
-            count=delivery.attempts_count,
-        )
-        for delivery in deliveries
-    }
 
 
 def get_multiple_deliveries_for_webhooks(
@@ -526,7 +516,7 @@ def clear_successful_delivery(delivery: "EventDelivery"):
 
 
 @allow_writer()
-def clear_successful_deliveries(deliveries: list["EventDelivery"]):
+def clear_successful_deliveries(deliveries: Sequence["EventDelivery"]):
     delivery_ids_to_delete = []
     payload_ids_to_delete = []
     for delivery in deliveries:
@@ -563,13 +553,15 @@ def clear_successful_deliveries(deliveries: list["EventDelivery"]):
 @allow_writer()
 def process_failed_deliveries(
     failed_deliveries_attempts: list[
-        tuple[EventDelivery, EventDeliveryAttempt, int, WebhookResponse]
+        tuple[
+            "EventDeliveryWithAttemptCount", "EventDeliveryAttempt", "WebhookResponse"
+        ]
     ],
     max_webhook_retries: int,
 ) -> None:
     deliveries_to_update = []
-    for delivery, attempt, attempt_count, response in failed_deliveries_attempts:
-        if attempt_count >= max_webhook_retries:
+    for delivery, attempt, response in failed_deliveries_attempts:
+        if delivery.attempts_count >= max_webhook_retries:
             delivery.status = EventDeliveryStatus.FAILED
             deliveries_to_update.append(delivery)
 
@@ -597,21 +589,6 @@ def process_failed_deliveries(
 
     if deliveries_to_update:
         EventDelivery.objects.bulk_update(deliveries_to_update, ["status"])
-
-
-@allow_writer()
-def create_attempts_for_deliveries(
-    deliveries: dict[int, EventDeliveryWithAttemptCount],
-    task_id: str | None,
-) -> dict[int, EventDeliveryAttempt]:
-    attempt_for_deliveries = {}
-    for delivery_id, delivery_with_count in deliveries.items():
-        delivery = delivery_with_count.delivery
-
-        attempt = create_attempt(delivery, task_id, with_save=False)
-        attempt_for_deliveries[delivery_id] = attempt
-
-    return attempt_for_deliveries
 
 
 def is_delivery_still_pending(delivery_id: int) -> bool:
