@@ -2,7 +2,6 @@ import logging
 from contextlib import contextmanager
 
 from django.db import DatabaseError, transaction
-from django.utils import timezone
 
 from ..webhook.event_types import WebhookEventSyncType
 from ..webhook.utils import get_webhooks_for_event
@@ -31,12 +30,10 @@ def get_active_tax_apps(identifiers: list[str] | None = None):
 def acquire_webhook_lock(app_id: int):
     try:
         with transaction.atomic():
-            mutex = AppWebhookMutex.objects.select_for_update(
-                nowait=True, of=(["self"])
-            ).get(app_id=app_id)
-
-            mutex.acquired_at = timezone.now()
-            mutex.save(update_fields=["acquired_at"])
+            AppWebhookMutex.objects.select_for_update(nowait=True, of=(["self"])).get(
+                app_id=app_id
+            )
+            logger.info("Acquired webhook lock for App ID: %s", app_id)
             yield True
 
     except DatabaseError:

@@ -4,7 +4,6 @@ from uuid import uuid4
 
 from django.contrib.auth.hashers import make_password
 from django.db import models
-from django.utils import timezone
 from django.utils.text import Truncator
 from oauthlib.common import generate_token
 
@@ -136,7 +135,6 @@ class AppWebhookMutex(models.Model):
         on_delete=models.CASCADE,
         related_name="+",
     )
-    acquired_at = models.DateTimeField(default=timezone.now)
 
 
 class AppTokenManager(models.Manager["AppToken"]):
