@@ -419,31 +419,20 @@ def get_pending_deliveries_for_app(app_id, batch_size):
 
 
 @dataclass
-class EventDeliveryRequestAttempt:
+class EventDeliveryRequest:
     attempt: EventDeliveryAttempt
+    delivery: EventDelivery
     payload: bytes
     payload_size: int
     prev_attempts_count: int
 
-    @property
-    def delivery(self):
-        return self.attempt.delivery
 
-    @property
-    def webhook(self):
-        return self.delivery.webhook
-
-    @property
-    def app(self):
-        return self.webhook.app
-
-
-def get_delivery_request_attempts_for_app(
+def get_delivery_requests_for_app(
     app_id: int,
     batch_size: int,
     task_id: str | None = None,
-) -> list[EventDeliveryRequestAttempt]:
-    request_attempts = []
+) -> list[EventDeliveryRequest]:
+    delivery_requests = []
     deliveries_qs = (
         EventDelivery.objects.select_related("payload", "webhook__app")
         .filter(webhook__app_id=app_id, status=EventDeliveryStatus.PENDING)
@@ -472,15 +461,16 @@ def get_delivery_request_attempts_for_app(
         data = delivery.payload.get_payload()
         data = data if isinstance(data, bytes) else data.encode("utf-8")
 
-        request_attempts.append(
-            EventDeliveryRequestAttempt(
+        delivery_requests.append(
+            EventDeliveryRequest(
                 attempt=create_attempt(delivery, task_id=task_id, with_save=False),
+                delivery=delivery,
                 payload=data,
                 payload_size=len(data),
                 prev_attempts_count=delivery.attempts_count,
             )
         )
-    return request_attempts
+    return delivery_requests
 
 
 def get_multiple_deliveries_for_webhooks(
@@ -613,47 +603,6 @@ def clear_successful_deliveries(deliveries: Sequence["EventDelivery"]):
         ]
         payloads_to_delete.delete()
         delete_files_from_private_storage_task(files_to_delete)
-
-
-@allow_writer()
-def process_failed_deliveries(
-    failed_deliveries_attempts: list[
-        tuple[
-            "EventDeliveryWithAttemptCount", "EventDeliveryAttempt", "WebhookResponse"
-        ]
-    ],
-    max_webhook_retries: int,
-) -> None:
-    deliveries_to_update = []
-    for delivery, attempt, response in failed_deliveries_attempts:
-        if delivery.attempts_count >= max_webhook_retries:
-            delivery.status = EventDeliveryStatus.FAILED
-            deliveries_to_update.append(delivery)
-
-        webhook = delivery.webhook
-        log_extra_details = {
-            "webhook": {
-                "id": webhook.id,
-                "target_url": sanitize_url_for_logging(webhook.target_url),
-                "event": delivery.event_type,
-                "execution_mode": "async",
-                "duration": response.duration,
-                "http_status_code": response.response_status_code,
-            },
-        }
-        task_logger.info(
-            "[Webhook ID:%r] Failed request to %r: %r for event: %r."
-            " Delivery attempt id: %r",
-            webhook.id,
-            sanitize_url_for_logging(webhook.target_url),
-            response.content,
-            delivery.event_type,
-            attempt.id,
-            extra=log_extra_details,
-        )
-
-    if deliveries_to_update:
-        EventDelivery.objects.bulk_update(deliveries_to_update, ["status"])
 
 
 def is_delivery_still_pending(delivery_id: int) -> bool:
