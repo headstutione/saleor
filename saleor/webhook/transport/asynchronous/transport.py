@@ -1,3 +1,4 @@
+import concurrent.futures
 import datetime
 import json
 import logging
@@ -51,10 +52,10 @@ from ..utils import (
     create_attempt,
     delivery_update,
     get_delivery_for_webhook,
-    get_delivery_requests_for_app,
     get_multiple_deliveries_for_webhooks,
     get_sqs_message_group_id,
     handle_webhook_retry,
+    iter_pending_delivery_requests_for_app,
     prepare_deferred_payload_data,
     send_webhook_using_scheme_method,
 )
@@ -831,6 +832,12 @@ def trigger_send_webhooks_async_for_apps(
         )
 
 
+class EventDeliveryRequestFailure(Exception):
+    def __init__(self, message: str, request: EventDeliveryRequest):
+        super().__init__(message)
+        self.request = request
+
+
 @app.task(
     queue=settings.WEBHOOK_CELERY_QUEUE_NAME,
     bind=True,
@@ -847,29 +854,37 @@ def send_webhooks_async_for_app(
             return
 
         domain = get_domain()
-        delivery_requests = get_delivery_requests_for_app(
+        delivery_requests = iter_pending_delivery_requests_for_app(
             app_id, batch_size=WEBHOOK_ASYNC_BATCH_SIZE, task_id=self.request.id
         )
 
-        if not delivery_requests:
-            logger.info("No pending deliveries found for App ID: %s", app_id)
-            return
-
-        for request in delivery_requests:
-            execute_webhook_request(domain, request, telemetry_context)
-
-        process_executed_delivery_requests(delivery_requests)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            futures = [
+                executor.submit(
+                    execute_webhook_request, domain, request, telemetry_context
+                )
+                for request in delivery_requests
+            ]
+            completed, _pending = concurrent.futures.wait(
+                futures, return_when=concurrent.futures.FIRST_EXCEPTION
+            )
+        process_executed_delivery_requests(completed)
 
 
 @allow_writer()
 def process_executed_delivery_requests(
-    delivery_requests: Sequence[EventDeliveryRequest],
+    delivery_requests: set[concurrent.futures.Future[EventDeliveryRequest]],
 ) -> None:
     attempts_to_save = []
     deliveries_to_update = []
     successful_deliveries = []
 
-    for request in delivery_requests:
+    for future in delivery_requests:
+        try:
+            request = future.result()
+        except EventDeliveryRequestFailure as e:
+            request = e.request
+
         attempt = request.attempt
         delivery = request.delivery
 
@@ -936,6 +951,9 @@ def execute_webhook_request(
     except ValueError as e:
         response = WebhookResponse(content=str(e), status=EventDeliveryStatus.FAILED)
 
+    attempt_update(attempt, response, with_save=False)
+    observability.report_event_delivery_attempt(attempt)
+
     if response.status == EventDeliveryStatus.SUCCESS:
         delivery.status = EventDeliveryStatus.SUCCESS
         task_logger.info(
@@ -947,6 +965,11 @@ def execute_webhook_request(
         )
 
     elif response.status == EventDeliveryStatus.FAILED:
+        url = sanitize_url_for_logging(webhook.target_url)
+        message = (
+            f"[Webhook ID:{webhook.id}] Failed request to {url}: {response.content}"
+            f"for event: {delivery.event_type}. Delivery id: {delivery.id}"
+        )
         log_extra_details = {
             "webhook": {
                 "id": webhook.id,
@@ -957,18 +980,10 @@ def execute_webhook_request(
                 "http_status_code": response.response_status_code,
             },
         }
-        task_logger.info(
-            "[Webhook ID:%r] Failed request to %r: %r for event: %r. Delivery id: %r",
-            webhook.id,
-            sanitize_url_for_logging(webhook.target_url),
-            response.content,
-            delivery.event_type,
-            delivery.id,
-            extra=log_extra_details,
-        )
+        task_logger.info(message, extra=log_extra_details)
+        raise EventDeliveryRequestFailure(message, request)
 
-    attempt_update(attempt, response, with_save=False)
-    observability.report_event_delivery_attempt(attempt)
+    return request
 
 
 def send_observability_events(webhooks: list[WebhookData], events: list[bytes]):

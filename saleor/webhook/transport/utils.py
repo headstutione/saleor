@@ -2,7 +2,7 @@ import datetime
 import hashlib
 import json
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
@@ -427,12 +427,11 @@ class EventDeliveryRequest:
     prev_attempts_count: int
 
 
-def get_delivery_requests_for_app(
+def iter_pending_delivery_requests_for_app(
     app_id: int,
     batch_size: int,
     task_id: str | None = None,
-) -> list[EventDeliveryRequest]:
-    delivery_requests = []
+) -> Generator[EventDeliveryRequest, None, None]:
     deliveries_qs = (
         EventDelivery.objects.select_related("payload", "webhook__app")
         .filter(webhook__app_id=app_id, status=EventDeliveryStatus.PENDING)
@@ -461,16 +460,13 @@ def get_delivery_requests_for_app(
         data = delivery.payload.get_payload()
         data = data if isinstance(data, bytes) else data.encode("utf-8")
 
-        delivery_requests.append(
-            EventDeliveryRequest(
-                attempt=create_attempt(delivery, task_id=task_id, with_save=False),
-                delivery=delivery,
-                payload=data,
-                payload_size=len(data),
-                prev_attempts_count=delivery.attempts_count,
-            )
+        yield EventDeliveryRequest(
+            attempt=create_attempt(delivery, task_id=task_id, with_save=False),
+            delivery=delivery,
+            payload=data,
+            payload_size=len(data),
+            prev_attempts_count=delivery.attempts_count,
         )
-    return delivery_requests
 
 
 def get_multiple_deliveries_for_webhooks(
