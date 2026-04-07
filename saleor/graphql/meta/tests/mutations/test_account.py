@@ -16,7 +16,6 @@ from . import (
     PUBLIC_VALUE2,
 )
 from .test_delete_metadata import (
-    DELETE_PUBLIC_METADATA_MUTATION,
     execute_clear_public_metadata_for_item,
     execute_clear_public_metadata_for_multiple_items,
     item_without_multiple_public_metadata,
@@ -132,20 +131,17 @@ def test_delete_public_metadata_for_staff_address_as_app(
     staff_user.addresses.add(address)
     address.store_value_in_metadata({PUBLIC_KEY: PUBLIC_VALUE})
     address.save(update_fields=["metadata"])
-    variables = {
-        "id": graphene.Node.to_global_id("Address", address.pk),
-        "keys": [PUBLIC_KEY],
-    }
+    address_id = graphene.Node.to_global_id("Address", address.pk)
 
     # when
-    response = app_api_client.post_graphql(
-        DELETE_PUBLIC_METADATA_MUTATION % "Address",
-        variables,
-        permissions=[permission_manage_staff],
+    response = execute_clear_public_metadata_for_item(
+        app_api_client, permission_manage_staff, address_id, "Address"
     )
 
     # then
-    assert_no_permission(response)
+    assert item_without_public_metadata(
+        response["data"]["deleteMetadata"]["item"], address, address_id
+    )
 
 
 def test_delete_public_metadata_for_myself_address(staff_api_client, address):
@@ -516,27 +512,23 @@ def test_delete_public_metadata_for_other_staff_as_staff(
     assert admin_user.updated_at > old_updated_at
 
 
-def test_delete_public_metadata_for_staff_as_app_no_permission(
+def test_delete_public_metadata_for_staff_as_app(
     app_api_client, permission_manage_staff, admin_user
 ):
     # given
     admin_user.store_value_in_metadata({PUBLIC_KEY: PUBLIC_VALUE})
     admin_user.save(update_fields=["metadata"])
     admin_id = graphene.Node.to_global_id("User", admin_user.pk)
-    variables = {
-        "id": admin_id,
-        "keys": [PRIVATE_KEY],
-    }
 
     # when
-    response = app_api_client.post_graphql(
-        DELETE_PUBLIC_METADATA_MUTATION % "User",
-        variables,
-        permissions=[permission_manage_staff],
+    response = execute_clear_public_metadata_for_item(
+        app_api_client, permission_manage_staff, admin_id, "User"
     )
 
     # then
-    assert_no_permission(response)
+    assert item_without_public_metadata(
+        response["data"]["deleteMetadata"]["item"], admin_user, admin_id
+    )
 
 
 def test_delete_public_metadata_for_myself_as_customer(user_api_client):
@@ -973,20 +965,15 @@ def test_update_public_metadata_for_staff_address_by_app_with_perm(
     staff_user.addresses.add(address)
     address_id = graphene.Node.to_global_id("Address", address.pk)
 
-    variables = {
-        "id": address_id,
-        "input": [{"key": PUBLIC_KEY, "value": "NewMetaValue"}],
-    }
-
     # when
-    response = app_api_client.post_graphql(
-        UPDATE_PUBLIC_METADATA_MUTATION % "Address",
-        variables,
-        permissions=[permission_manage_staff],
+    response = execute_update_public_metadata_for_item(
+        app_api_client, permission_manage_staff, address_id, "Address"
     )
 
     # then
-    assert_no_permission(response)
+    assert item_contains_proper_public_metadata(
+        response["data"]["updateMetadata"]["item"], address, address_id
+    )
 
 
 def test_update_public_metadata_for_staff_address_by_app_without_perm(
@@ -1293,26 +1280,21 @@ def test_add_private_metadata_for_other_staff_as_staff(
     )
 
 
-def test_add_public_metadata_for_staff_as_app_no_permission(
+def test_add_public_metadata_for_staff_as_app(
     app_api_client, permission_manage_staff, admin_user
 ):
     # given
     admin_id = graphene.Node.to_global_id("User", admin_user.pk)
-    variables = {
-        "id": admin_id,
-        "input": [{"key": PUBLIC_KEY, "value": PUBLIC_VALUE}],
-    }
 
     # when
-
-    response = app_api_client.post_graphql(
-        UPDATE_PRIVATE_METADATA_MUTATION % "User",
-        variables,
-        permissions=[permission_manage_staff],
+    response = execute_update_public_metadata_for_item(
+        app_api_client, permission_manage_staff, admin_id, "User"
     )
 
     # then
-    assert_no_permission(response)
+    assert item_contains_proper_public_metadata(
+        response["data"]["updateMetadata"]["item"], admin_user, admin_id
+    )
 
 
 def test_add_private_metadata_for_staff_as_app_no_permission(

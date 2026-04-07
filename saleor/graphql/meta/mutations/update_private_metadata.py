@@ -1,5 +1,7 @@
 import graphene
 
+from ....core.exceptions import PermissionDenied
+from ....permission.enums import AccountPermissions
 from ...core import ResolveInfo
 from ...core.types import MetadataError, NonNullList
 from ..inputs import MetadataInput, MetadataInputDescription
@@ -28,6 +30,15 @@ class UpdatePrivateMetadata(BaseMetadataMutation):
             description="Fields required to update the object's metadata.",
             required=True,
         )
+
+    @classmethod
+    def check_permissions(cls, context, permissions=None, **data):  # type: ignore[override]
+        is_app = bool(getattr(context, "app", None))
+        if is_app and permissions and AccountPermissions.MANAGE_STAFF in permissions:
+            raise PermissionDenied(
+                message="Apps are not allowed to perform this mutation."
+            )
+        return super().check_permissions(context, permissions)
 
     @classmethod
     def perform_mutation(cls, _root, info: ResolveInfo, /, **data):
