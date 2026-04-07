@@ -1113,14 +1113,14 @@ files = [
 
 [[package]]
 name = "django"
-version = "4.2.28"
+version = "4.2.30"
 description = "A high-level Python web framework that encourages rapid development and clean, pragmatic design."
 optional = false
 python-versions = ">=3.8"
 groups = ["main", "dev"]
 files = [
-    {file = "django-4.2.28-py3-none-any.whl", hash = "sha256:49a23c1b83ef31525f8d71a57b040f91d34660edb3f086280a8519855655ed3c"},
-    {file = "django-4.2.28.tar.gz", hash = "sha256:a4b9cd881991add394cafa8bb3b11ad1742d1e1470ba99c3ef53dc540316ccfe"},
+    {file = "django-4.2.30-py3-none-any.whl", hash = "sha256:4d07aaf1c62f9984842b67c2874ebbf7056a17be253860299b93ae1881faad65"},
+    {file = "django-4.2.30.tar.gz", hash = "sha256:4ebc7a434e3819db6cf4b399fb5b3f536310a30e8486f08b66886840be84b37c"},
 ]
 
 [package.dependencies]
@@ -6112,4 +6112,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "~3.12"
-content-hash = "e357fee1186f66a9b63f5d530601867f3292ffb3ef6bd0a2b921c18563a996b8"
+content-hash = "cd480708bc59eea21ecb8e0055df9a1c7906be05008268fab3d8b96292999ca3"
