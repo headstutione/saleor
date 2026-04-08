@@ -25,7 +25,7 @@ from ..core.utils import is_valid_ipv4, is_valid_ipv6
 from ..webhook import observability
 from .api import API_PATH, schema
 from .context import clear_context, get_context_value
-from .core.validators.query_cost import validate_query_cost
+from .core.validators import validate_query
 from .error import clear_errors
 from .query_cost_map import COST_MAP
 from .utils import (
@@ -148,6 +148,18 @@ class GraphQLView(View):
             )
 
         if isinstance(data, list):
+            if len(data) > settings.GRAPHQL_BATCH_MAX_COUNT:
+                return JsonResponse(
+                    data={
+                        "errors": [
+                            self.format_error(
+                                GraphQLError("Number of batch queries exceeded.")
+                            )
+                        ]
+                    },
+                    status=400,
+                )
+
             responses = [self.get_response(request, entry) for entry in data]
             result: Union[list, Optional[dict]] = [
                 response for response, code in responses
@@ -304,12 +316,11 @@ class GraphQLView(View):
             except GraphQLError as e:
                 return ExecutionResult(errors=[e], invalid=True)
 
-            query_cost, cost_errors = validate_query_cost(
-                schema,
-                document,
-                variables,
-                COST_MAP,
-                settings.GRAPHQL_QUERY_MAX_COMPLEXITY,
+            query_cost, cost_errors = validate_query(
+                schema=schema,
+                document_ast=document.document_ast,
+                variables=variables,
+                cost_map=COST_MAP,
             )
             span.set_tag("graphql.query_cost", query_cost)
             if settings.GRAPHQL_QUERY_MAX_COMPLEXITY and cost_errors:
