@@ -16,7 +16,7 @@ from ....checkout.problems import (
     get_checkout_problems,
 )
 from ....product.models import ProductChannelListing
-from ....warehouse.models import Reservation, Stock
+from ....warehouse.models import Stock
 from ....warehouse.reservations import is_reservation_enabled
 from ...core.dataloaders import DataLoader
 from ...product.dataloaders import (
@@ -24,6 +24,7 @@ from ...product.dataloaders import (
 )
 from ...site.dataloaders import get_site_promise
 from ...warehouse.dataloaders import (
+    ActiveReservationsByStockIdLoader,
     StocksWithAvailableQuantityByProductVariantIdAndChannelSlugLoader,
     StocksWithAvailableQuantityByProductVariantIdCountryCodeAndChannelLoader,
 )
@@ -82,7 +83,7 @@ class CheckoutLinesProblemsByCheckoutIdLoader(
             variant_data_list = list(variant_data_set)
             product_data_list = list(product_data_set)
 
-            def _prepare_problems(data):
+            def _with_stocks(data):
                 (
                     variant_stocks,
                     product_channel_listings,
@@ -103,24 +104,48 @@ class CheckoutLinesProblemsByCheckoutIdLoader(
                     ProductChannelListing,
                 ] = dict(zip(product_data_set, product_channel_listings, strict=False))
 
-                reservation_quantity_by_stock_and_checkout = (
-                    self._load_active_reservations(variant_stock_map, site)
+                stock_ids = list(
+                    {
+                        stock.id
+                        for stocks in variant_stock_map.values()
+                        for stock in stocks
+                    }
                 )
 
-                problems = {}
+                def _prepare_problems(reservations_per_stock):
+                    reservation_quantity_by_stock_and_checkout: dict[
+                        int, dict[UUID, int]
+                    ] = defaultdict(lambda: defaultdict(int))
+                    for stock_id, reservations in zip(
+                        stock_ids, reservations_per_stock, strict=False
+                    ):
+                        for reservation in reservations:
+                            checkout_id = reservation.checkout_line.checkout_id
+                            reservation_quantity_by_stock_and_checkout[stock_id][
+                                checkout_id
+                            ] += reservation.quantity_reserved
 
-                for checkout_info, lines in zip(
-                    checkout_infos, checkout_lines, strict=False
-                ):
-                    checkout_id = checkout_info.checkout.pk
-                    problems[checkout_id] = get_checkout_lines_problems(
-                        checkout_info,
-                        lines,
-                        variant_stock_map,
-                        product_channel_listings_map,
-                        reservation_quantity_by_stock_and_checkout=reservation_quantity_by_stock_and_checkout,
+                    problems = {}
+                    for checkout_info, lines in zip(
+                        checkout_infos, checkout_lines, strict=False
+                    ):
+                        checkout_id = checkout_info.checkout.pk
+                        problems[checkout_id] = get_checkout_lines_problems(
+                            checkout_info,
+                            lines,
+                            variant_stock_map,
+                            product_channel_listings_map,
+                            reservation_quantity_by_stock_and_checkout=reservation_quantity_by_stock_and_checkout,
+                        )
+                    return [problems.get(key, []) for key in keys]
+
+                if stock_ids and is_reservation_enabled(site.settings):
+                    return (
+                        ActiveReservationsByStockIdLoader(self.context)
+                        .load_many(stock_ids)
+                        .then(_prepare_problems)
                     )
-                return [problems.get(key, []) for key in keys]
+                return _prepare_problems([])
 
             stock_dataloader: (
                 StocksWithAvailableQuantityByProductVariantIdCountryCodeAndChannelLoader
@@ -155,39 +180,13 @@ class CheckoutLinesProblemsByCheckoutIdLoader(
             )
 
             return Promise.all([variant_stocks, product_channel_listings]).then(
-                _prepare_problems
+                _with_stocks
             )
 
         checkout_infos = CheckoutInfoByCheckoutTokenLoader(self.context).load_many(keys)
         lines = CheckoutLinesInfoByCheckoutTokenLoader(self.context).load_many(keys)
         site = get_site_promise(self.context)
         return Promise.all([checkout_infos, lines, site]).then(_resolve_problems)
-
-    def _load_active_reservations(
-        self,
-        variant_stock_map: dict[
-            tuple[VARIANT_ID, CHANNEL_SLUG, COUNTRY_CODE],
-            Iterable[Stock],
-        ],
-        site,
-    ) -> dict[int, dict[UUID, int]]:
-        if not is_reservation_enabled(site.settings):
-            return {}
-        stock_ids = {
-            stock.id for stocks in variant_stock_map.values() for stock in stocks
-        }
-        if not stock_ids:
-            return {}
-        reservations_qs = (
-            Reservation.objects.using(self.database_connection_name)
-            .filter(stock_id__in=stock_ids)
-            .not_expired()
-            .values_list("stock_id", "checkout_line__checkout_id", "quantity_reserved")
-        )
-        result: dict[int, dict[UUID, int]] = defaultdict(lambda: defaultdict(int))
-        for stock_id, checkout_id, quantity_reserved in reservations_qs:
-            result[stock_id][checkout_id] += quantity_reserved
-        return result
 
 
 class CheckoutProblemsByCheckoutIdDataloader(
