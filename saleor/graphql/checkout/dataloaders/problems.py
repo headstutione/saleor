@@ -1,5 +1,6 @@
 from collections import defaultdict
 from collections.abc import Iterable
+from uuid import UUID
 
 from promise import Promise
 
@@ -15,7 +16,8 @@ from ....checkout.problems import (
     get_checkout_problems,
 )
 from ....product.models import ProductChannelListing
-from ....warehouse.models import Stock
+from ....warehouse.models import Reservation, Stock
+from ....warehouse.reservations import is_reservation_enabled
 from ...core.dataloaders import DataLoader
 from ...product.dataloaders import (
     ProductChannelListingByProductIdAndChannelSlugLoader,
@@ -101,6 +103,10 @@ class CheckoutLinesProblemsByCheckoutIdLoader(
                     ProductChannelListing,
                 ] = dict(zip(product_data_set, product_channel_listings, strict=False))
 
+                reservation_quantity_by_stock_and_checkout = (
+                    self._load_active_reservations(variant_stock_map, site)
+                )
+
                 problems = {}
 
                 for checkout_info, lines in zip(
@@ -112,6 +118,7 @@ class CheckoutLinesProblemsByCheckoutIdLoader(
                         lines,
                         variant_stock_map,
                         product_channel_listings_map,
+                        reservation_quantity_by_stock_and_checkout=reservation_quantity_by_stock_and_checkout,
                     )
                 return [problems.get(key, []) for key in keys]
 
@@ -155,6 +162,32 @@ class CheckoutLinesProblemsByCheckoutIdLoader(
         lines = CheckoutLinesInfoByCheckoutTokenLoader(self.context).load_many(keys)
         site = get_site_promise(self.context)
         return Promise.all([checkout_infos, lines, site]).then(_resolve_problems)
+
+    def _load_active_reservations(
+        self,
+        variant_stock_map: dict[
+            tuple[VARIANT_ID, CHANNEL_SLUG, COUNTRY_CODE],
+            Iterable[Stock],
+        ],
+        site,
+    ) -> dict[int, dict[UUID, int]]:
+        if not is_reservation_enabled(site.settings):
+            return {}
+        stock_ids = {
+            stock.id for stocks in variant_stock_map.values() for stock in stocks
+        }
+        if not stock_ids:
+            return {}
+        reservations_qs = (
+            Reservation.objects.using(self.database_connection_name)
+            .filter(stock_id__in=stock_ids)
+            .not_expired()
+            .values_list("stock_id", "checkout_line__checkout_id", "quantity_reserved")
+        )
+        result: dict[int, dict[UUID, int]] = defaultdict(lambda: defaultdict(int))
+        for stock_id, checkout_id, quantity_reserved in reservations_qs:
+            result[stock_id][checkout_id] += quantity_reserved
+        return result
 
 
 class CheckoutProblemsByCheckoutIdDataloader(
