@@ -197,12 +197,6 @@ class User(
             ),
             # Account searching index
             GinIndex(
-                name="user_search_gin",
-                # `opclasses` and `fields` should be the same length
-                fields=["search_document"],
-                opclasses=["gin_trgm_ops"],
-            ),
-            GinIndex(
                 name="user_tsearch",
                 fields=["search_vector"],
             ),
@@ -226,8 +220,8 @@ class User(
                 name="user_date_joined_idx",
             ),
             BTreeIndex(
-                fields=["email"],
-                name="user_email_idx",
+                fields=["external_reference"],
+                name="user_external_reference_idx",
             ),
             BTreeIndex(
                 fields=["number_of_orders"],

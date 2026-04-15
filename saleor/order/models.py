@@ -379,20 +379,8 @@ class Order(ModelWithMetadata, ModelWithExternalReference):
         indexes = [
             *ModelWithMetadata.Meta.indexes,
             GinIndex(
-                name="order_search_gin",
-                # `opclasses` and `fields` should be the same length
-                fields=["search_document"],
-                opclasses=["gin_trgm_ops"],
-            ),
-            GinIndex(
                 name="order_tsearch",
                 fields=["search_vector"],
-            ),
-            GinIndex(
-                name="order_email_search_gin",
-                # `opclasses` and `fields` should be the same length
-                fields=["user_email"],
-                opclasses=["gin_trgm_ops"],
             ),
             models.Index(fields=["created_at"], name="idx_order_created_at"),
             GinIndex(fields=["voucher_code"], name="order_voucher_code_idx"),
@@ -411,6 +399,18 @@ class Order(ModelWithMetadata, ModelWithExternalReference):
                 name="order_totalnetamount_idx",
             ),
             BTreeIndex(fields=["status"], name="order_status_idx"),
+            BTreeIndex(
+                fields=["authorize_status"],
+                name="order_authorize_status_idx",
+            ),
+            BTreeIndex(
+                fields=["charge_status"],
+                name="order_charge_status_idx",
+            ),
+            BTreeIndex(
+                fields=["external_reference"],
+                name="order_external_reference_idx",
+            ),
         ]
 
     def is_fully_paid(self):

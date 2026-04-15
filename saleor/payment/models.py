@@ -191,7 +191,6 @@ class TransactionItem(ModelWithMetadata):
             BTreeIndex(fields=["payment_method_type"], name="payment_method_type_ids"),
             BTreeIndex(fields=["cc_brand"], name="cc_brand_idx"),
             BTreeIndex(fields=["psp_reference"], name="psp_reference_idx"),
-            BTreeIndex(fields=["app_identifier"], name="app_identifier_idx"),
             BTreeIndex(fields=["created_at"], name="transaction_created_at_idx"),
             BTreeIndex(fields=["modified_at"], name="transaction_modified_at_idx"),
         ]

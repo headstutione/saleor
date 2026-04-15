@@ -1,7 +1,7 @@
 import os
 
 from django.conf import settings
-from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.indexes import BTreeIndex, GinIndex
 from django.contrib.postgres.search import SearchVectorField
 from django.core.validators import MinLengthValidator
 from django.db import models
@@ -121,7 +121,13 @@ class GiftCard(ModelWithMetadata):
         permissions = (
             (GiftcardPermissions.MANAGE_GIFT_CARD.codename, "Manage gift cards."),
         )
-        indexes = [GinIndex(name="giftcard_tsearch", fields=["search_vector"])]
+        indexes = [
+            GinIndex(name="giftcard_tsearch", fields=["search_vector"]),
+            BTreeIndex(
+                fields=["code"],
+                name="giftcard_code_idx",
+            ),
+        ]
         indexes.extend(ModelWithMetadata.Meta.indexes)
 
     @property

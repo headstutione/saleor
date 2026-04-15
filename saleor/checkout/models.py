@@ -92,6 +92,12 @@ class CheckoutDelivery(models.Model):
         return self.external_shipping_method_id or str(self.built_in_shipping_method_id)
 
     class Meta:
+        indexes = [
+            BTreeIndex(
+                fields=["external_shipping_method_id"],
+                name="checkout_delivery_externalid_idx",
+            ),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=[
@@ -326,6 +332,14 @@ class Checkout(models.Model):
             (CheckoutPermissions.MANAGE_TAXES.codename, "Manage taxes"),
         )
         indexes = [
+            BTreeIndex(
+                fields=["authorize_status"],
+                name="checkout_authorize_status_idx",
+            ),
+            BTreeIndex(
+                fields=["charge_status"],
+                name="checkout_charge_status_idx",
+            ),
             BTreeIndex(
                 fields=["last_automatic_completion_attempt"],
                 name="automaticcompletionattempt_idx",

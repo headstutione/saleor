@@ -240,6 +240,10 @@ class Product(SeoModel, ModelWithMetadata, ModelWithExternalReference):
             models.Index(
                 fields=["category_id", "slug"],
             ),
+            BTreeIndex(
+                fields=["external_reference"],
+                name="product_external_reference_idx",
+            ),
         ]
         indexes.extend(ModelWithMetadata.Meta.indexes)
 
@@ -382,6 +386,10 @@ class ProductVariant(SortableModel, ModelWithMetadata, ModelWithExternalReferenc
                 name="variant_gin",
                 fields=["name", "sku"],
                 opclasses=["gin_trgm_ops"] * 2,
+            ),
+            BTreeIndex(
+                fields=["external_reference"],
+                name="variant_external_reference_idx",
             ),
         ]
 
