@@ -227,7 +227,10 @@ class VoucherCode(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [BTreeIndex(fields=["voucher"], name="vouchercode_voucher_idx")]
+        indexes = [
+            BTreeIndex(fields=["voucher"], name="vouchercode_voucher_idx"),
+            BTreeIndex(fields=["code"], name="vouchercode_code_idx"),
+        ]
         ordering = ("-created_at", "code")
 
 

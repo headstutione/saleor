@@ -195,6 +195,10 @@ class Attribute(ModelWithMetadata, ModelWithExternalReference):
                 fields=["slug", "name", "type", "input_type", "entity_type", "unit"],
                 opclasses=["gin_trgm_ops"] * 6,
             ),
+            BTreeIndex(
+                fields=["external_reference"],
+                name="attribute_external_reference_idx",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -434,6 +438,10 @@ class AttributeValue(ModelWithExternalReference):
             BTreeIndex(
                 fields=["numeric"],
                 name="attribute_value_numeric_idx",
+            ),
+            BTreeIndex(
+                fields=["external_reference"],
+                name="att_val_external_reference_idx",
             ),
         ]
 

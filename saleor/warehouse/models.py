@@ -310,6 +310,10 @@ class Warehouse(ModelWithMetadata, ModelWithExternalReference):
                 name="click_and_collect_option_idx",
                 fields=["click_and_collect_option"],
             ),
+            BTreeIndex(
+                fields=["external_reference"],
+                name="warehouse_external_reference_idx",
+            ),
         ]
 
     def __str__(self):
