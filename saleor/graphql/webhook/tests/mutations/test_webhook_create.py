@@ -385,6 +385,159 @@ def test_webhook_create_notify_user_with_another_event(app_api_client):
     assert error["code"] == WebhookErrorCode.INVALID_NOTIFY_WITH_SUBSCRIPTION.name
 
 
+CHANNEL_STOCK_EVENT_CASES = pytest.mark.parametrize(
+    "event_enum",
+    [
+        WebhookEventTypeAsyncEnum.PRODUCT_VARIANT_OUT_OF_STOCK_IN_CHANNEL,
+        WebhookEventTypeAsyncEnum.PRODUCT_VARIANT_BACK_IN_STOCK_IN_CHANNEL,
+        WebhookEventTypeAsyncEnum.PRODUCT_VARIANT_OUT_OF_STOCK_FOR_CLICK_AND_COLLECT,
+        WebhookEventTypeAsyncEnum.PRODUCT_VARIANT_BACK_IN_STOCK_FOR_CLICK_AND_COLLECT,
+    ],
+)
+
+
+@CHANNEL_STOCK_EVENT_CASES
+def test_webhook_create_channel_stock_event_rejected_with_legacy_flag(
+    event_enum, app_api_client, site_settings
+):
+    # given - legacy stock availability is enabled
+    site_settings.use_legacy_shipping_zone_stock_availability = True
+    site_settings.save(update_fields=["use_legacy_shipping_zone_stock_availability"])
+    variables = {
+        "input": {
+            "name": "channel stock event",
+            "targetUrl": "https://www.example.com",
+            "asyncEvents": [event_enum.name],
+        }
+    }
+
+    # when
+    response = app_api_client.post_graphql(WEBHOOK_CREATE, variables=variables)
+    content = get_graphql_content(response)
+
+    # then
+    data = content["data"]["webhookCreate"]
+    assert data["webhook"] is None
+    assert len(data["errors"]) == 1
+    error = data["errors"][0]
+    assert error["field"] == "asyncEvents"
+    assert error["code"] == WebhookErrorCode.INVALID_WITH_LEGACY_STOCK_AVAILABILITY.name
+    assert not Webhook.objects.exists()
+
+
+@CHANNEL_STOCK_EVENT_CASES
+def test_webhook_create_channel_stock_event_allowed_without_legacy_flag(
+    event_enum, app_api_client, site_settings
+):
+    # given - legacy stock availability is disabled
+    site_settings.use_legacy_shipping_zone_stock_availability = False
+    site_settings.save(update_fields=["use_legacy_shipping_zone_stock_availability"])
+    variables = {
+        "input": {
+            "name": "channel stock event",
+            "targetUrl": "https://www.example.com",
+            "asyncEvents": [event_enum.name],
+        }
+    }
+
+    # when
+    response = app_api_client.post_graphql(WEBHOOK_CREATE, variables=variables)
+    content = get_graphql_content(response)
+
+    # then
+    data = content["data"]["webhookCreate"]
+    assert data["errors"] == []
+    webhook = Webhook.objects.get()
+    events = webhook.events.all()
+    assert len(events) == 1
+    assert events[0].event_type == event_enum.value
+
+
+CHANNEL_STOCK_SUBSCRIPTION_EVENTS = pytest.mark.parametrize(
+    ("subscription_field", "event_enum"),
+    [
+        (
+            "productVariantOutOfStockInChannel",
+            WebhookEventTypeAsyncEnum.PRODUCT_VARIANT_OUT_OF_STOCK_IN_CHANNEL,
+        ),
+        (
+            "productVariantBackInStockInChannel",
+            WebhookEventTypeAsyncEnum.PRODUCT_VARIANT_BACK_IN_STOCK_IN_CHANNEL,
+        ),
+        (
+            "productVariantOutOfStockForClickAndCollect",
+            WebhookEventTypeAsyncEnum.PRODUCT_VARIANT_OUT_OF_STOCK_FOR_CLICK_AND_COLLECT,
+        ),
+        (
+            "productVariantBackInStockForClickAndCollect",
+            WebhookEventTypeAsyncEnum.PRODUCT_VARIANT_BACK_IN_STOCK_FOR_CLICK_AND_COLLECT,
+        ),
+    ],
+)
+
+
+def _channel_stock_subscription_query(field: str) -> str:
+    return (
+        f"subscription {{ {field} {{ productVariant {{ id }} channel {{ slug }} }} }}"
+    )
+
+
+@CHANNEL_STOCK_SUBSCRIPTION_EVENTS
+def test_webhook_create_channel_stock_event_via_subscription_rejected_with_legacy_flag(
+    subscription_field, event_enum, app_api_client, site_settings
+):
+    # given - legacy stock availability enabled; event declared via query only
+    site_settings.use_legacy_shipping_zone_stock_availability = True
+    site_settings.save(update_fields=["use_legacy_shipping_zone_stock_availability"])
+    variables = {
+        "input": {
+            "name": "from subscription",
+            "targetUrl": "https://www.example.com",
+            "query": _channel_stock_subscription_query(subscription_field),
+        }
+    }
+
+    # when
+    response = app_api_client.post_graphql(WEBHOOK_CREATE, variables=variables)
+    content = get_graphql_content(response)
+
+    # then
+    data = content["data"]["webhookCreate"]
+    assert data["webhook"] is None
+    assert len(data["errors"]) == 1
+    error = data["errors"][0]
+    assert error["code"] == WebhookErrorCode.INVALID_WITH_LEGACY_STOCK_AVAILABILITY.name
+    assert not Webhook.objects.exists()
+
+
+@CHANNEL_STOCK_SUBSCRIPTION_EVENTS
+def test_webhook_create_channel_stock_event_via_subscription_allowed_without_legacy_flag(
+    subscription_field, event_enum, app_api_client, site_settings
+):
+    # given - legacy stock availability disabled; event declared via query only
+    site_settings.use_legacy_shipping_zone_stock_availability = False
+    site_settings.save(update_fields=["use_legacy_shipping_zone_stock_availability"])
+    variables = {
+        "input": {
+            "name": "from subscription",
+            "targetUrl": "https://www.example.com",
+            "query": _channel_stock_subscription_query(subscription_field),
+        }
+    }
+
+    # when
+    response = app_api_client.post_graphql(WEBHOOK_CREATE, variables=variables)
+    content = get_graphql_content(response)
+
+    # then
+    data = content["data"]["webhookCreate"]
+    assert data["errors"] == []
+    webhook = Webhook.objects.get()
+    events = webhook.events.all()
+    assert len(events) == 1
+    assert events[0].event_type == event_enum.value
+
+
 FILTERABLE_SUBSCRIPTION = """
 subscription {
   orderCreated(channels: [%s]) {

@@ -12,6 +12,7 @@ from ...core.descriptions import DEPRECATED_IN_3X_INPUT
 from ...core.doc_category import DOC_CATEGORY_WEBHOOKS
 from ...core.fields import JSONString
 from ...core.types import BaseInputObjectType, NonNullList, WebhookError
+from ...site.dataloaders import get_site_promise
 from .. import enums
 from ..mixins import NotifyUserEventValidationMixin
 from ..types import Webhook
@@ -89,10 +90,11 @@ class WebhookUpdate(WebhookCreate, NotifyUserEventValidationMixin):
         error_type_field = "webhook_errors"
 
     @classmethod
-    def save(cls, _info: ResolveInfo, instance, cleaned_input, instance_tracker=None):
+    def save(cls, info: ResolveInfo, instance, cleaned_input, instance_tracker=None):
         instance.save()
         events = set(cleaned_input.get("events", []))
-        cls.validate_events(events)
+        site = get_site_promise(info.context).get()
+        cls.validate_events(events, site_settings=site.settings)
         if events:
             instance.events.all().delete()
             models.WebhookEvent.objects.bulk_create(

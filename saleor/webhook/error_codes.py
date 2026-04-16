@@ -14,6 +14,7 @@ class WebhookErrorCode(Enum):
     MISSING_EVENT = "missing_event"
     INVALID_CUSTOM_HEADERS = "invalid_custom_headers"
     INVALID_NOTIFY_WITH_SUBSCRIPTION = "invalid_notify_with_subscription"
+    INVALID_WITH_LEGACY_STOCK_AVAILABILITY = "invalid_with_legacy_stock_availability"
 
 
 class WebhookDryRunErrorCode(Enum):

@@ -22144,6 +22144,7 @@ enum WebhookErrorCode @doc(category: "Webhooks") {
   MISSING_EVENT
   INVALID_CUSTOM_HEADERS
   INVALID_NOTIFY_WITH_SUBSCRIPTION
+  INVALID_WITH_LEGACY_STOCK_AVAILABILITY
 }
 
 input WebhookCreateInput @doc(category: "Webhooks") {

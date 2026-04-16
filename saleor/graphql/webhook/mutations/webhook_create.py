@@ -20,6 +20,7 @@ from ...core.fields import JSONString
 from ...core.mutations import DeprecatedModelMutation
 from ...core.types import BaseInputObjectType, NonNullList, WebhookError
 from ...core.utils import raise_validation_error
+from ...site.dataloaders import get_site_promise
 from .. import enums
 from ..mixins import NotifyUserEventValidationMixin
 from ..subscription_query import SubscriptionQuery
@@ -149,12 +150,18 @@ class WebhookCreate(DeprecatedModelMutation, NotifyUserEventValidationMixin):
                     code=WebhookErrorCode.INVALID_CUSTOM_HEADERS,
                 )
 
-        cls._clean_webhook_events(cleaned_data, subscription_query)
+        site = get_site_promise(info.context).get()
+        cls._clean_webhook_events(cleaned_data, subscription_query, site.settings)
 
         return cleaned_data
 
     @classmethod
-    def _clean_webhook_events(cls, data, subscription_query: SubscriptionQuery | None):
+    def _clean_webhook_events(
+        cls,
+        data,
+        subscription_query: SubscriptionQuery | None,
+        site_settings,
+    ):
         # if `events` field is not empty, use this field. Otherwise get event types
         # from `async_events` and `sync_events`. If the fields are also empty,
         # parse events from `query`.
@@ -165,7 +172,7 @@ class WebhookCreate(DeprecatedModelMutation, NotifyUserEventValidationMixin):
 
         if not events and subscription_query:
             events = subscription_query.events
-        cls.validate_events(events)
+        cls.validate_events(events, site_settings=site_settings)
 
         data["events"] = events
         return data
