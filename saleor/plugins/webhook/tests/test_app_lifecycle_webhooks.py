@@ -13,8 +13,11 @@ import pytest
 from django.utils import timezone
 
 from ....app.models import App
+from ....core import EventDeliveryStatus
+from ....core.models import EventDelivery
 from ....webhook.event_types import WebhookEventAsyncType
 from ....webhook.models import Webhook
+from ....webhook.transport.utils import get_multiple_deliveries_for_webhooks
 from ...manager import get_plugins_manager
 
 
@@ -119,11 +122,7 @@ def test_app_receives_own_app_status_changed_on_deactivate(
 def test_unrelated_app_without_manage_apps_does_not_receive_lifecycle_event(
     mocked_trigger, app_with_lifecycle_webhook
 ):
-    """Verify bypass does not leak to unrelated apps.
-
-    An app subscribed to APP_DELETED without MANAGE_APPS must not
-    receive events about *other* apps — only its own.
-    """
+    """An app subscribed to APP_DELETED must not receive events about other apps."""
     affected_app = App.objects.create(name="Target", is_active=True)
     _, unrelated_webhook = app_with_lifecycle_webhook(WebhookEventAsyncType.APP_DELETED)
 
@@ -133,3 +132,80 @@ def test_unrelated_app_without_manage_apps_does_not_receive_lifecycle_event(
     if mocked_trigger.called:
         delivered_webhooks = list(mocked_trigger.call_args.args[2])
         assert unrelated_webhook not in delivered_webhooks
+
+
+@mock.patch("saleor.plugins.webhook.plugin.trigger_webhooks_async")
+def test_admin_app_with_manage_apps_does_not_receive_events_about_other_apps(
+    mocked_trigger, app_with_lifecycle_webhook, permission_manage_apps
+):
+    """App lifecycle events are self-only — MANAGE_APPS does not grant visibility."""
+    affected_app = App.objects.create(name="Target", is_active=True)
+    admin_app, admin_webhook = app_with_lifecycle_webhook(
+        WebhookEventAsyncType.APP_DELETED
+    )
+    admin_app.permissions.add(permission_manage_apps)
+
+    manager = get_plugins_manager(allow_replica=False)
+    manager.app_deleted(affected_app)
+
+    if mocked_trigger.called:
+        delivered_webhooks = list(mocked_trigger.call_args.args[2])
+        assert admin_webhook not in delivered_webhooks
+
+
+@mock.patch(
+    "saleor.webhook.transport.asynchronous.transport.send_webhook_request_async"
+    ".apply_async"
+)
+def test_app_deleted_delivery_survives_worker_active_check(
+    _mocked_apply_async, app_with_lifecycle_webhook
+):
+    """Event fires end-to-end and survives the worker-time active-app gate.
+
+    EventDelivery is created with the bypass flag set so the worker keeps it
+    instead of marking FAILED.
+    """
+    app, webhook = app_with_lifecycle_webhook(
+        WebhookEventAsyncType.APP_DELETED,
+        is_active=False,
+        removed_at=timezone.now(),
+    )
+
+    manager = get_plugins_manager(allow_replica=False)
+    manager.app_deleted(app)
+
+    delivery = EventDelivery.objects.get(webhook=webhook)
+    assert delivery.bypass_app_active_check is True
+    assert delivery.status == EventDeliveryStatus.PENDING
+
+    active, inactive = get_multiple_deliveries_for_webhooks([delivery.pk])
+
+    assert delivery.pk in active
+    assert delivery.pk not in inactive
+    delivery.refresh_from_db()
+    assert delivery.status == EventDeliveryStatus.PENDING
+
+
+@mock.patch(
+    "saleor.webhook.transport.asynchronous.transport.send_webhook_request_async"
+    ".apply_async"
+)
+def test_app_status_changed_delivery_survives_worker_active_check(
+    _mocked_apply_async, app_with_lifecycle_webhook
+):
+    """Same guarantee for APP_STATUS_CHANGED on deactivate."""
+    app, webhook = app_with_lifecycle_webhook(
+        WebhookEventAsyncType.APP_STATUS_CHANGED, is_active=False
+    )
+
+    manager = get_plugins_manager(allow_replica=False)
+    manager.app_status_changed(app)
+
+    delivery = EventDelivery.objects.get(webhook=webhook)
+    assert delivery.bypass_app_active_check is True
+
+    active, _ = get_multiple_deliveries_for_webhooks([delivery.pk])
+
+    assert delivery.pk in active
+    delivery.refresh_from_db()
+    assert delivery.status == EventDeliveryStatus.PENDING

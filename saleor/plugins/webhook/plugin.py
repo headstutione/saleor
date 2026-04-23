@@ -120,7 +120,11 @@ from ...webhook.transport.utils import (
     get_meta_description_key,
     get_sqs_message_group_id,
 )
-from ...webhook.utils import filter_webhooks_for_channel, get_webhooks_for_event
+from ...webhook.utils import (
+    filter_webhooks_for_channel,
+    get_webhooks_for_app_lifecycle_event,
+    get_webhooks_for_event,
+)
 from ..base_plugin import BasePlugin
 
 if TYPE_CHECKING:
@@ -396,11 +400,12 @@ class WebhookPlugin(BasePlugin):
         return previous_value
 
     def _trigger_app_event(self, event_type, app):
-        # Pass the affected app's id as bypass so it receives its own lifecycle
-        # event without holding MANAGE_APPS (the permission gating these events).
-        if webhooks := get_webhooks_for_event(
-            event_type, bypass_permissions_app_id=app.id
-        ):
+        # App lifecycle events are self-only: the affected app is the sole
+        # recipient. MANAGE_APPS does not grant visibility into other apps'
+        # lifecycle. The affected app may be deactivated or soft-deleted at
+        # this point, so deliveries carry bypass_app_active_check to skip the
+        # worker-time app.is_active gate.
+        if webhooks := get_webhooks_for_app_lifecycle_event(event_type, app):
             payload = self._serialize_payload(
                 {
                     "id": graphene.Node.to_global_id("App", app.id),
@@ -410,7 +415,12 @@ class WebhookPlugin(BasePlugin):
                 }
             )
             self.trigger_webhooks_async(
-                payload, event_type, webhooks, app, self.requestor
+                payload,
+                event_type,
+                webhooks,
+                app,
+                self.requestor,
+                bypass_app_active_check=True,
             )
 
     def app_installed(self, app: "App", previous_value: None) -> None:

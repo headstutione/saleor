@@ -520,7 +520,8 @@ def get_multiple_deliveries_for_webhooks(
         logger.warning("Event delivery id: %r not found", not_found_delivery_id)
 
     for delivery in deliveries:
-        if delivery.webhook.is_active and delivery.webhook.app.is_active:
+        app_active = delivery.webhook.app.is_active or delivery.bypass_app_active_check
+        if delivery.webhook.is_active and app_active:
             active_deliveries[delivery.pk] = delivery
         else:
             logger.info("Event delivery id: %r app/webhook is disabled.", delivery.pk)

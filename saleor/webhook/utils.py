@@ -14,11 +14,20 @@ if TYPE_CHECKING:
     from django.db.models import QuerySet
 
 
+APP_LIFECYCLE_EVENTS = frozenset(
+    {
+        WebhookEventAsyncType.APP_INSTALLED,
+        WebhookEventAsyncType.APP_UPDATED,
+        WebhookEventAsyncType.APP_DELETED,
+        WebhookEventAsyncType.APP_STATUS_CHANGED,
+    }
+)
+
+
 def get_filter_for_single_webhook_event(
     event_type: str,
     apps_ids: Optional["list[int]"] = None,
     apps_identifier: list[str] | None = None,
-    bypass_permissions_app_id: int | None = None,
 ):
     permissions = {}
     required_permission = WebhookEventAsyncType.PERMISSIONS.get(
@@ -43,15 +52,6 @@ def get_filter_for_single_webhook_event(
     apps = App.objects.using(settings.DATABASE_CONNECTION_REPLICA_NAME).filter(
         **app_kwargs
     )
-    apps_filter = Q(Exists(apps.filter(id=OuterRef("app_id"))))
-
-    # A lifecycle event for an affected app must reach that app's own webhooks
-    # even if the app does not hold the event's required permission, and even
-    # if the app is currently inactive or soft-deleted (e.g. APP_DELETED,
-    # APP_STATUS_CHANGED on deactivate). Only one app can own its own lifecycle
-    # event, so this is a single-id bypass.
-    if bypass_permissions_app_id is not None:
-        apps_filter = apps_filter | Q(app_id=bypass_permissions_app_id)
 
     event_types = [event_type]
     if event_type in WebhookEventAsyncType.ALL:
@@ -62,7 +62,7 @@ def get_filter_for_single_webhook_event(
     ).filter(event_type__in=event_types)
     return (
         Q(is_active=True)
-        & apps_filter
+        & Q(Exists(apps.filter(id=OuterRef("app_id"))))
         & Q(Exists(webhook_events.filter(webhook_id=OuterRef("id"))))
     )
 
@@ -72,7 +72,6 @@ def get_webhooks_for_event(
     webhooks: Optional["QuerySet[Webhook]"] = None,
     apps_ids: Optional["list[int]"] = None,
     apps_identifier: list[str] | None = None,
-    bypass_permissions_app_id: int | None = None,
 ) -> "QuerySet[Webhook]":
     """Get active webhooks from the database for an event."""
 
@@ -85,12 +84,46 @@ def get_webhooks_for_event(
         event_type=event_type,
         apps_ids=apps_ids,
         apps_identifier=apps_identifier,
-        bypass_permissions_app_id=bypass_permissions_app_id,
     )
 
     return (
         webhooks.using(settings.DATABASE_CONNECTION_REPLICA_NAME)
         .filter(filters)
+        .select_related("app")
+        .prefetch_related("app__permissions__content_type")
+    )
+
+
+def get_webhooks_for_app_lifecycle_event(
+    event_type: str,
+    app: "App",
+) -> "QuerySet[Webhook]":
+    """Get webhooks for an app's own lifecycle event.
+
+    App lifecycle events are self-only: only the affected app's own webhook
+    subscriptions receive them. MANAGE_APPS grants no access to events about
+    other apps. The app is intentionally not filtered by is_active /
+    removed_at — it may be deactivated or soft-deleted at dispatch time
+    (APP_DELETED, APP_STATUS_CHANGED on deactivate).
+    """
+    if event_type not in APP_LIFECYCLE_EVENTS:
+        raise ValueError(
+            f"{event_type} is not an app lifecycle event. Use "
+            "get_webhooks_for_event instead."
+        )
+
+    event_types = [event_type, WebhookEventAsyncType.ANY]
+    webhook_events = WebhookEvent.objects.using(
+        settings.DATABASE_CONNECTION_REPLICA_NAME
+    ).filter(event_type__in=event_types)
+
+    return (
+        Webhook.objects.using(settings.DATABASE_CONNECTION_REPLICA_NAME)
+        .filter(
+            is_active=True,
+            app_id=app.id,
+        )
+        .filter(Exists(webhook_events.filter(webhook_id=OuterRef("id"))))
         .select_related("app")
         .prefetch_related("app__permissions__content_type")
     )
