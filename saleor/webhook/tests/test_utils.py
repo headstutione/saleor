@@ -1,4 +1,5 @@
 import pytest
+from django.utils import timezone
 
 from ...app.models import App
 from ..event_types import WebhookEventAsyncType, WebhookEventSyncType
@@ -115,6 +116,136 @@ def test_get_webhook_for_event_not_returning_any_webhook_for_sync_event_types(
     webhooks = get_webhooks_for_event(sync_type)
 
     assert set(webhooks) == {sync_webhook}
+
+
+@pytest.fixture
+def app_lifecycle_app_factory(db):
+    """Create an app + webhook subscribed to an app lifecycle event.
+
+    The created app intentionally does NOT hold MANAGE_APPS, mirroring how
+    third-party apps cannot grant themselves admin-only permissions.
+    """
+
+    def create_app(
+        event_type=WebhookEventAsyncType.APP_DELETED,
+        active_app=True,
+        active_webhook=True,
+        removed=False,
+    ):
+        app = App.objects.create(name="Lifecycle App", is_active=active_app)
+        app.tokens.create(name="Default")
+        if removed:
+            app.removed_at = timezone.now()
+            app.save(update_fields=["removed_at"])
+        webhook = Webhook.objects.create(
+            name="lifecycle-webhook", app=app, is_active=active_webhook
+        )
+        webhook.events.create(event_type=event_type, webhook=webhook)
+        return app, webhook
+
+    return create_app
+
+
+def test_bypass_includes_self_app_without_required_permission():
+    """Affected app receives its own lifecycle webhook even without MANAGE_APPS."""
+
+    app = App.objects.create(name="Self App", is_active=True)
+    app.tokens.create(name="Default")
+    webhook = Webhook.objects.create(name="self-webhook", app=app)
+    webhook.events.create(event_type=WebhookEventAsyncType.APP_DELETED)
+
+    webhooks = get_webhooks_for_event(
+        WebhookEventAsyncType.APP_DELETED,
+        bypass_permissions_app_id=app.id,
+    )
+
+    assert set(webhooks) == {webhook}
+
+
+def test_bypass_does_not_leak_to_unrelated_apps(app_lifecycle_app_factory):
+    """Apps not in the bypass set without MANAGE_APPS still get nothing."""
+
+    affected_app, affected_webhook = app_lifecycle_app_factory()
+    other_app, _ = app_lifecycle_app_factory()
+
+    webhooks = get_webhooks_for_event(
+        WebhookEventAsyncType.APP_DELETED,
+        bypass_permissions_app_id=affected_app.id,
+    )
+
+    assert set(webhooks) == {affected_webhook}
+
+
+def test_bypass_includes_soft_deleted_app_for_app_deleted(app_lifecycle_app_factory):
+    """A soft-deleted app must still receive its own APP_DELETED."""
+
+    affected_app, affected_webhook = app_lifecycle_app_factory(removed=True)
+
+    webhooks = get_webhooks_for_event(
+        WebhookEventAsyncType.APP_DELETED,
+        bypass_permissions_app_id=affected_app.id,
+    )
+
+    assert set(webhooks) == {affected_webhook}
+
+
+def test_bypass_includes_inactive_app_for_status_changed(app_lifecycle_app_factory):
+    """A deactivated app must still receive its own APP_STATUS_CHANGED."""
+
+    affected_app, affected_webhook = app_lifecycle_app_factory(
+        event_type=WebhookEventAsyncType.APP_STATUS_CHANGED, active_app=False
+    )
+
+    webhooks = get_webhooks_for_event(
+        WebhookEventAsyncType.APP_STATUS_CHANGED,
+        bypass_permissions_app_id=affected_app.id,
+    )
+
+    assert set(webhooks) == {affected_webhook}
+
+
+def test_bypass_does_not_override_inactive_webhook_subscription(
+    app_lifecycle_app_factory,
+):
+    """An inactive webhook subscription must not deliver, even with bypass."""
+
+    affected_app, _ = app_lifecycle_app_factory(active_webhook=False)
+
+    webhooks = get_webhooks_for_event(
+        WebhookEventAsyncType.APP_DELETED,
+        bypass_permissions_app_id=affected_app.id,
+    )
+
+    assert set(webhooks) == set()
+
+
+def test_bypass_combines_with_permitted_apps(
+    app_lifecycle_app_factory, permission_manage_apps
+):
+    """Bypass union: affected app + every app holding MANAGE_APPS both receive."""
+
+    affected_app, affected_webhook = app_lifecycle_app_factory()
+    admin_app, admin_webhook = app_lifecycle_app_factory()
+    admin_app.permissions.add(permission_manage_apps)
+
+    webhooks = get_webhooks_for_event(
+        WebhookEventAsyncType.APP_DELETED,
+        bypass_permissions_app_id=affected_app.id,
+    )
+
+    assert set(webhooks) == {affected_webhook, admin_webhook}
+
+
+def test_bypass_param_omitted_keeps_existing_permission_filter(
+    app_lifecycle_app_factory,
+):
+    """Without bypass, an app lacking MANAGE_APPS is still excluded (regression)."""
+
+    app_lifecycle_app_factory()
+
+    webhooks = get_webhooks_for_event(WebhookEventAsyncType.APP_DELETED)
+
+    assert set(webhooks) == set()
 
 
 @pytest.mark.parametrize(

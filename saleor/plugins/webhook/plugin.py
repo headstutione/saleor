@@ -396,7 +396,11 @@ class WebhookPlugin(BasePlugin):
         return previous_value
 
     def _trigger_app_event(self, event_type, app):
-        if webhooks := get_webhooks_for_event(event_type):
+        # Pass the affected app's id as bypass so it receives its own lifecycle
+        # event without holding MANAGE_APPS (the permission gating these events).
+        if webhooks := get_webhooks_for_event(
+            event_type, bypass_permissions_app_id=app.id
+        ):
             payload = self._serialize_payload(
                 {
                     "id": graphene.Node.to_global_id("App", app.id),

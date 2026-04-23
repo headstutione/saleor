@@ -18,6 +18,7 @@ def get_filter_for_single_webhook_event(
     event_type: str,
     apps_ids: Optional["list[int]"] = None,
     apps_identifier: list[str] | None = None,
+    bypass_permissions_app_id: int | None = None,
 ):
     permissions = {}
     required_permission = WebhookEventAsyncType.PERMISSIONS.get(
@@ -42,6 +43,16 @@ def get_filter_for_single_webhook_event(
     apps = App.objects.using(settings.DATABASE_CONNECTION_REPLICA_NAME).filter(
         **app_kwargs
     )
+    apps_filter = Q(Exists(apps.filter(id=OuterRef("app_id"))))
+
+    # A lifecycle event for an affected app must reach that app's own webhooks
+    # even if the app does not hold the event's required permission, and even
+    # if the app is currently inactive or soft-deleted (e.g. APP_DELETED,
+    # APP_STATUS_CHANGED on deactivate). Only one app can own its own lifecycle
+    # event, so this is a single-id bypass.
+    if bypass_permissions_app_id is not None:
+        apps_filter = apps_filter | Q(app_id=bypass_permissions_app_id)
+
     event_types = [event_type]
     if event_type in WebhookEventAsyncType.ALL:
         event_types.append(WebhookEventAsyncType.ANY)
@@ -51,7 +62,7 @@ def get_filter_for_single_webhook_event(
     ).filter(event_type__in=event_types)
     return (
         Q(is_active=True)
-        & Q(Exists(apps.filter(id=OuterRef("app_id"))))
+        & apps_filter
         & Q(Exists(webhook_events.filter(webhook_id=OuterRef("id"))))
     )
 
@@ -61,6 +72,7 @@ def get_webhooks_for_event(
     webhooks: Optional["QuerySet[Webhook]"] = None,
     apps_ids: Optional["list[int]"] = None,
     apps_identifier: list[str] | None = None,
+    bypass_permissions_app_id: int | None = None,
 ) -> "QuerySet[Webhook]":
     """Get active webhooks from the database for an event."""
 
@@ -70,7 +82,10 @@ def get_webhooks_for_event(
         webhooks = Webhook.objects.all()
 
     filters = get_filter_for_single_webhook_event(
-        event_type=event_type, apps_ids=apps_ids, apps_identifier=apps_identifier
+        event_type=event_type,
+        apps_ids=apps_ids,
+        apps_identifier=apps_identifier,
+        bypass_permissions_app_id=bypass_permissions_app_id,
     )
 
     return (
