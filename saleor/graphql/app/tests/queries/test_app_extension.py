@@ -1,5 +1,4 @@
 import graphene
-import pytest
 
 from .....app.models import App, AppExtension
 from .....app.types import AppType
@@ -31,7 +30,6 @@ def test_app_extension_staff_user(app, staff_api_client, permission_manage_produ
         label="Create product with App",
         url="https://www.example.com/app-product",
         mount="product_overview_more_actions",
-        http_target_method="POST",
         target="widget",
     )
     app_extension.permissions.add(permission_manage_products)
@@ -473,53 +471,6 @@ def test_app_extension_with_app_query_by_customer_without_permissions(
     assert_no_permission(response)
 
 
-@pytest.mark.parametrize(
-    ("target", "method"),
-    [
-        ("widget", "POST"),
-        ("widget", "GET"),
-        ("new_tab", "POST"),
-        ("new_tab", "GET"),
-    ],
-)
-def test_app_extension_type_settings_from_http_target_method(
-    target,
-    method,
-    app,
-    staff_api_client,
-):
-    # given
-    app_extension = AppExtension.objects.create(
-        app=app,
-        label="Create product with App",
-        url="https://www.example.com/app-product",
-        mount="order_details_widgets",
-        http_target_method=method,
-        target=target,
-    )
-    id = graphene.Node.to_global_id("AppExtension", app_extension.id)
-    variables = {"id": id}
-
-    # when
-    response = staff_api_client.post_graphql(
-        QUERY_APP_EXTENSION,
-        variables,
-    )
-
-    # then
-    content = get_graphql_content(response)
-    extension_data = content["data"]["appExtension"]
-
-    assert extension_data["mountName"] == "ORDER_DETAILS_WIDGETS"
-    assert extension_data["targetName"] == app_extension.target.upper()
-
-    if target == "new_tab":
-        assert extension_data["settings"]["newTabTarget"]["method"] == method
-
-    if target == "widget":
-        assert extension_data["settings"]["widgetTarget"]["method"] == method
-
-
 def test_app_extension_type_settings_from_native_settings(
     app,
     staff_api_client,
@@ -527,14 +478,14 @@ def test_app_extension_type_settings_from_native_settings(
     # given
     target = "NEW_TAB"
     method = "GET"
+    settings = {"newTabTarget": {"method": method}}
 
     app_extension = AppExtension.objects.create(
         app=app,
         label="Create product with App",
         url="https://www.example.com/app-product",
         mount="order_details_widgets",
-        http_target_method=method,
-        settings={"newTabTarget": {"method": method}},
+        settings=settings,
         target=target,
     )
     id = graphene.Node.to_global_id("AppExtension", app_extension.id)
@@ -552,9 +503,4 @@ def test_app_extension_type_settings_from_native_settings(
 
     assert extension_data["mountName"] == "ORDER_DETAILS_WIDGETS"
     assert extension_data["targetName"] == app_extension.target.upper()
-
-    if target == "new_tab":
-        assert extension_data["settings"]["newTabTarget"]["method"] == method
-
-    if target == "widget":
-        assert extension_data["settings"]["widgetTarget"]["method"] == method
+    assert extension_data["settings"] == settings
