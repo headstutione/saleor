@@ -25,12 +25,14 @@ query ($id: ID!){
 
 def test_app_extension_staff_user(app, staff_api_client, permission_manage_products):
     # given
+    settings = {"widgetTarget": {"method": "POST"}}
     app_extension = AppExtension.objects.create(
         app=app,
         label="Create product with App",
         url="https://www.example.com/app-product",
         mount="product_overview_more_actions",
         target="widget",
+        settings=settings,
     )
     app_extension.permissions.add(permission_manage_products)
     id = graphene.Node.to_global_id("AppExtension", app_extension.id)
@@ -55,8 +57,7 @@ def test_app_extension_staff_user(app, staff_api_client, permission_manage_produ
     permission_code = extension_data["permissions"][0]["code"].lower()
     assert app_extension.permissions.first().codename == permission_code
 
-    assert extension_data["settings"] is not None
-    assert extension_data["settings"]["widgetTarget"]["method"] == "POST"
+    assert extension_data["settings"] == settings
 
     assert extension_data["mountName"] == "PRODUCT_OVERVIEW_MORE_ACTIONS"
     assert extension_data["targetName"] == "WIDGET"
