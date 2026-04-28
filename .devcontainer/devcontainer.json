@@ -1,41 +1,72 @@
 {
-  "name": "Saleor",
-  "dockerComposeFile": "docker-compose.yml",
-  "service": "saleor",
-  "workspaceFolder": "/app",
-  "forwardPorts": [
-    8000,
-    "dashboard:9000",
-    "mailpit:8025",
-    "db:5432",
-    "cache:6379"
+  "name": "Saleor Dev Container",
+  "dockerFile": "Dockerfile",
+  "runArgs": ["--network=host"],
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/app,type=bind,consistency=cached"
   ],
+  "workspaceFolder": "/app",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind",
+
+  // Environment files
+  "runEnvFile": ".devcontainer/backend.env",
+
+  // Forward ports for Django, PostgreSQL, Redis, and Celery Flower
+  "forwardPorts": [8000, 5432, 6379, 5555],
   "portsAttributes": {
     "8000": {
-        "label": "Saleor Core"
+      "label": "Django Dev Server",
+      "onAutoForward": "notify"
     },
-    "dashboard:9000": {
-        "label": "Saleor Dashboard"
+    "5432": {
+      "label": "PostgreSQL",
+      "onAutoForward": "silent"
     },
-    "mailpit:8025": {
-      "label": "Mailpit UI"
+    "6379": {
+      "label": "Redis",
+      "onAutoForward": "silent"
     },
-    "db:5432": {
-      "label": "PostgreSQL"
+    "5555": {
+      "label": "Celery Flower",
+      "onAutoForward": "notify"
     }
   },
-  "postCreateCommand": "python manage.py migrate",
+
+  // VS Code settings and extensions
   "customizations": {
     "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.formatting.provider": "black",
+        "python.linting.enabled": true,
+        "python.linting.flake8Enabled": true,
+        "python.linting.mypyEnabled": true,
+        "editor.formatOnSave": true,
+        "editor.rulers": [88],
+        "files.trimTrailingWhitespace": true,
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.black-formatter"
+        }
+      },
       "extensions": [
-        "be5invis.toml",
-        "Cameron.vscode-pytest",
-        "charliermarsh.ruff",
-        "editorconfig.editorconfig",
         "ms-python.python",
-        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "ms-python.flake8",
+        "ms-python.mypy-type-checker",
+        "ms-python.isort",
+        "batisteo.vscode-django",
+        "GraphQL.vscode-graphql",
+        "GraphQL.vscode-graphql-syntax",
+        "eamodio.gitlens",
         "streetsidesoftware.code-spell-checker"
       ]
     }
-  }
+  },
+
+  // Lifecycle hooks
+  "postCreateCommand": "pip install -r requirements_dev.txt && pre-commit install",
+  "postStartCommand": "python manage.py migrate --run-syncdb",
+
+  // Run as non-root user
+  "remoteUser": "saleor"
 }
